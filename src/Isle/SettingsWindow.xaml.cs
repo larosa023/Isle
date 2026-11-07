@@ -345,7 +345,7 @@ public partial class SettingsWindow : Window
 
             parts.Add(key is >= Key.D0 and <= Key.D9 ? ((int)(key - Key.D0)).ToString() : key.ToString());
             var text = string.Join("+", parts);
-            if (!MainWindow.TryParseHotkey(text, out _, out _))
+            if (!MainWindow.TryParseHotkey(text, out uint _, out uint _))
             {
                 box.Text = "That key can't be used";
                 return;
