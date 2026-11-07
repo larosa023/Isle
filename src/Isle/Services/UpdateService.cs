@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -11,7 +10,6 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Isle.Core;
-using Activity = Isle.Core.Activity;
 
 namespace Isle.Services;
 
@@ -229,7 +227,7 @@ public sealed class UpdateService
                 throw;
             }
 
-            Process.Start(new ProcessStartInfo(exe, "--updated") { UseShellExecute = false });
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe, "--updated") { UseShellExecute = false });
             Application.Current.Shutdown();
         }
         catch (UnauthorizedAccessException)
