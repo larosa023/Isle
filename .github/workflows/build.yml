@@ -60,4 +60,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = $env:GITHUB_REF_NAME
-          gh release create $tag dist/Isle.exe dist/Isle-standalone.exe dist/SHA256SUMS.txt --title "Isle $($tag.TrimStart('v'))" --generate-notes
+          $files = @('dist/Isle.exe', 'dist/Isle-standalone.exe', 'dist/SHA256SUMS.txt')
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            # Release was created on github.com (which also created the tag): attach the builds.
+            gh release upload $tag @files --clobber
+          } else {
+            gh release create $tag @files --title "Isle $($tag.TrimStart('v'))" --generate-notes
+          }
