@@ -8,7 +8,9 @@
 - **Calls** — Teams, Discord, Zoom, Slack, Phone Link, WhatsApp, Meet in a browser… detected from microphone use, with a running call timer. Optional mic-in-use indicator for every other app.
 - **Live sports** — your teams' scores from ESPN (NBA, WNBA, NFL, NCAA, MLB, NHL, MLS, EPL, LaLiga, UCL), with a peek on finals and score changes. Click to open the game in Fullcourt or ESPN.
 - **Notifications** — mirrors Windows toasts (experimental — see below), and your own apps can push notifications through the local API.
-- **Built for your other apps** — a tiny local API lets **Amplite**, **Savor**, **Fullcourt** or any script put live activities on the island. → [docs/integration.md](docs/integration.md)
+- **Amplite built in** — Isle talks to Amplite's local API: cover, song, live progress, prev / play / next, **Like**, and an **EQ preset picker** right on the island. No setup; it just appears while Amplite is running, and replaces the duplicate Spotify card.
+- **You decide what shows** — every app Isle detects (players, call apps, notification senders, browsers, API clients) gets its own *show*, *peek* and *priority* setting on the **Apps** page, or right-click the island → *Hide this app*.
+- **Built for your other apps** — a tiny local API lets **Savor**, **Fullcourt** or any script put live activities on the island. → [docs/integration.md](docs/integration.md)
 - **Themeable** — Midnight (true black), Graphite, Glass, Frost (light) or fully custom colors; fixed or automatic accent; size and position.
 - **Light** — no web view, no background services. Animations run only while something is moving and stop when hidden; it hides itself over fullscreen games and video.
 - **Built-in updater** — checks GitHub Releases, verifies the download's SHA-256, swaps itself and restarts. No installer, no admin.
@@ -32,10 +34,23 @@ Requires Windows 10 (2004 / build 19041) or Windows 11.
 | **Hover** | Expand (or click, if you turned hover off) |
 | **Scroll** on the island | Flip between activities when several are live |
 | **Click** the expanded island | Open the activity (the game page, the downloaded file…) |
-| **Right-click** | New timer, settings, check for updates, hide for an hour, quit |
+| **Right-click** | New timer, hide this app, Do not disturb, settings, updates, hide for an hour, quit |
+| **Ctrl+Alt+I** | Open / close the island (change it in Settings → General) |
 | **Tray icon** | Same menu; left-click opens Settings |
 
-Settings are saved to `%APPDATA%\Isle\settings.json` (log: `isle.log` in the same folder). The custom theme's colors live in that file under `customTheme`.
+### Settings
+
+Open from the tray icon or right-click → *Settings…*. Changes apply instantly, and *General → Try it* puts sample cards on the island so you can see them.
+
+- **Island** — which display, left / center / right, offsets, size, idle / compact / expanded dimensions, corner roundness, and exactly which parts show in the compact pill and the expanded island; clock in the idle pill; your own quick-timer buttons.
+- **Appearance** — themes or custom colors, accent (from the content, or fixed), opacity, border, font, visualizer.
+- **Behavior & motion** — hover vs click, hover and close delays, click and scroll behavior, peeks, fullscreen hiding, animation speed, springiness, reduce motion.
+- **Activities** — per type (music, timers, downloads, calls, notifications, sports, your apps, updates): show, peek, priority.
+- **Apps** — every detected app with show, peek, priority, forget.
+- **General** — start with Windows, Do not disturb, quiet hours (calls and finished timers can still alert), a global shortcut (default **Ctrl+Alt+I**).
+- **Amplite**, **Live sports**, **Integrations**, **About & updates**.
+
+Settings are saved to `%APPDATA%\Isle\settings.json` (per-app choices in `apps.json`) (log: `isle.log` in the same folder). The custom theme's colors live in that file under `customTheme`.
 
 ### Sports setup
 
