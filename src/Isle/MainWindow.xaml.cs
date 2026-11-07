@@ -50,16 +50,16 @@ public partial class MainWindow : Window
         _hub = hub;
         _s = settings;
 
-        _hoverTimer = Timer(120, () => { _hoverTimer.Stop(); if (_hover) Expand(); });
-        _leaveTimer = Timer(380, () => { _leaveTimer.Stop(); if (!_hover && !_sticky && !_peeking) Collapse(); });
-        _peekTimer = Timer(3500, () =>
+        _hoverTimer = Timer(120, t => { t.Stop(); if (_hover) Expand(); });
+        _leaveTimer = Timer(380, t => { t.Stop(); if (!_hover && !_sticky && !_peeking) Collapse(); });
+        _peekTimer = Timer(3500, t =>
         {
-            _peekTimer.Stop();
+            t.Stop();
             _peeking = false;
             if (!_hover && !_sticky) Collapse();
         });
-        _guardTimer = Timer(2000, Guard);
-        _hideTimer = Timer(3_600_000, () => { _hideTimer.Stop(); SetUserHidden(false); });
+        _guardTimer = Timer(2000, _ => Guard());
+        _hideTimer = Timer(3_600_000, t => { t.Stop(); SetUserHidden(false); });
 
         _hub.Changed += Refresh;
         _hub.PeekRequested += OnPeek;
@@ -81,10 +81,10 @@ public partial class MainWindow : Window
         Closed += (_, _) => SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
     }
 
-    DispatcherTimer Timer(int ms, Action tick)
+    DispatcherTimer Timer(int ms, Action<DispatcherTimer> tick)
     {
         var t = new DispatcherTimer(DispatcherPriority.Normal, Dispatcher) { Interval = TimeSpan.FromMilliseconds(ms) };
-        t.Tick += (_, _) => tick();
+        t.Tick += (_, _) => tick(t);
         return t;
     }
 
@@ -342,8 +342,12 @@ public partial class MainWindow : Window
         if (open != null)
         {
             try { open(); } catch (Exception ex) { Log.Error("open activity", ex); }
+            Collapse();
         }
-        Collapse();
+        else if (_sticky || !_hover)
+        {
+            Collapse(); // clicked open earlier: a second click closes it
+        }
     }
 
     void Pill_Wheel(object sender, MouseWheelEventArgs e)
