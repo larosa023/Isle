@@ -1,0 +1,9 @@
+bin/
+obj/
+out/
+dist/
+.vs/
+.vscode/
+*.user
+*.suo
+*.DotSettings.user

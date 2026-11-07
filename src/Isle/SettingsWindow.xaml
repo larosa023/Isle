@@ -1,0 +1,187 @@
+<Window x:Class="Isle.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Isle Settings" Width="600" Height="760" MinWidth="480" MinHeight="400"
+        WindowStartupLocation="CenterScreen"
+        FontFamily="Segoe UI Variable Text, Segoe UI">
+
+    <Window.Resources>
+        <Style x:Key="Section" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,26,0,10"/>
+        </Style>
+        <Style x:Key="Hint" TargetType="TextBlock">
+            <Setter Property="Opacity" Value="0.65"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,2,0,8"/>
+        </Style>
+        <Style x:Key="Label" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,16,0"/>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+        <Border DockPanel.Dock="Bottom" Padding="24,14" BorderThickness="0,1,0,0" BorderBrush="#33808080">
+            <DockPanel LastChildFill="False">
+                <TextBlock x:Name="VersionText" VerticalAlignment="Center" Opacity="0.6"/>
+                <Button Content="Save" DockPanel.Dock="Right" MinWidth="96" Margin="8,0,0,0" Click="Save_Click" IsDefault="True"/>
+                <Button Content="Cancel" DockPanel.Dock="Right" MinWidth="96" Click="Cancel_Click" IsCancel="True"/>
+            </DockPanel>
+        </Border>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="28,20,28,28">
+                <TextBlock Text="Isle" FontSize="30" FontWeight="SemiBold"/>
+                <TextBlock Text="A Dynamic Island for Windows." Style="{StaticResource Hint}"/>
+
+                <!-- Appearance -->
+                <TextBlock Text="Appearance" Style="{StaticResource Section}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="Theme" Style="{StaticResource Label}"/>
+                    <ComboBox x:Name="ThemeBox" Grid.Column="1" Margin="0,4">
+                        <ComboBoxItem Content="Midnight (true black)" Tag="midnight"/>
+                        <ComboBoxItem Content="Graphite" Tag="graphite"/>
+                        <ComboBoxItem Content="Glass" Tag="glass"/>
+                        <ComboBoxItem Content="Frost (light)" Tag="frost"/>
+                        <ComboBoxItem Content="Custom (edit settings.json)" Tag="custom"/>
+                    </ComboBox>
+                    <TextBlock Grid.Row="1" Text="Accent" Style="{StaticResource Label}"/>
+                    <TextBox x:Name="AccentBox" Grid.Row="1" Grid.Column="1" ToolTip="auto = album art and team colors, or a color like #0A84FF"/>
+                    <TextBlock Grid.Row="2" Text="Size" Style="{StaticResource Label}"/>
+                    <DockPanel Grid.Row="2" Grid.Column="1" Margin="0,6">
+                        <TextBlock x:Name="ScaleText" DockPanel.Dock="Right" Width="44" TextAlignment="Right" VerticalAlignment="Center"/>
+                        <Slider x:Name="ScaleSlider" Minimum="0.8" Maximum="1.4" TickFrequency="0.05" IsSnapToTickEnabled="True"
+                                ValueChanged="ScaleSlider_ValueChanged" VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <TextBlock Grid.Row="3" Text="Distance from top" Style="{StaticResource Label}"/>
+                    <DockPanel Grid.Row="3" Grid.Column="1" Margin="0,6">
+                        <TextBlock x:Name="OffsetText" DockPanel.Dock="Right" Width="44" TextAlignment="Right" VerticalAlignment="Center"/>
+                        <Slider x:Name="OffsetSlider" Minimum="0" Maximum="40" TickFrequency="1" IsSnapToTickEnabled="True"
+                                ValueChanged="OffsetSlider_ValueChanged" VerticalAlignment="Center"/>
+                    </DockPanel>
+                </Grid>
+                <CheckBox x:Name="HideIdleBox" Content="Hide the pill when nothing is happening"/>
+                <CheckBox x:Name="HideFullscreenBox" Content="Hide while a game or video is fullscreen"/>
+                <CheckBox x:Name="VisualizerBox" Content="Animate the music visualizer"/>
+
+                <!-- Behavior -->
+                <TextBlock Text="Behavior" Style="{StaticResource Section}"/>
+                <CheckBox x:Name="HoverBox" Content="Expand on hover (otherwise click)"/>
+                <CheckBox x:Name="PeekBox" Content="Briefly expand when something new happens"/>
+                <Grid Margin="0,4,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Peek length" Style="{StaticResource Label}"/>
+                    <DockPanel Grid.Column="1">
+                        <TextBlock x:Name="PeekText" DockPanel.Dock="Right" Width="44" TextAlignment="Right" VerticalAlignment="Center"/>
+                        <Slider x:Name="PeekSlider" Minimum="1.5" Maximum="10" TickFrequency="0.5" IsSnapToTickEnabled="True"
+                                ValueChanged="PeekSlider_ValueChanged" VerticalAlignment="Center"/>
+                    </DockPanel>
+                </Grid>
+                <CheckBox x:Name="StartupBox" Content="Start Isle when I sign in to Windows"/>
+                <TextBlock Style="{StaticResource Hint}" Text="Tip: scroll on the island to flip between activities. Right-click it for timers and settings."/>
+
+                <!-- Activities -->
+                <TextBlock Text="Activities" Style="{StaticResource Section}"/>
+                <CheckBox x:Name="MediaBox" Content="Now playing — album art and controls for any app (Spotify, browsers, Media Player…)"/>
+                <CheckBox x:Name="MediaPeekBox" Content="Peek when the track changes" Margin="24,3,0,3"/>
+                <DockPanel Margin="24,4,0,4">
+                    <TextBlock Text="Hide paused media after (minutes, 0 = never)" Style="{StaticResource Label}"/>
+                    <TextBox x:Name="MediaPausedBox" Width="60" HorizontalAlignment="Left"/>
+                </DockPanel>
+                <CheckBox x:Name="DownloadsBox" Content="Downloads — progress and speed for browser downloads"/>
+                <DockPanel Margin="24,4,0,4">
+                    <TextBlock Text="Folder" Style="{StaticResource Label}"/>
+                    <TextBox x:Name="DownloadsFolderBox" ToolTip="Leave empty to use your Windows Downloads folder"/>
+                </DockPanel>
+                <CheckBox x:Name="CallsBox" Content="Calls — Teams, Discord, Zoom, Phone Link, WhatsApp… with a call timer"/>
+                <CheckBox x:Name="AnyMicBox" Content="Also show a mic-in-use indicator for any other app" Margin="24,3,0,3"/>
+                <CheckBox x:Name="NotificationsBox" Content="Mirror Windows notifications (experimental)"/>
+                <TextBlock Style="{StaticResource Hint}" Margin="24,0,0,4"
+                           Text="Windows only grants notification access to some apps. If it's refused, Isle notes it in the log and keeps working; your own apps can always send notifications through the local API below."/>
+                <DockPanel Margin="24,0,0,4">
+                    <TextBlock Text="Muted apps" Style="{StaticResource Label}"/>
+                    <TextBox x:Name="MutedBox" ToolTip="Comma-separated app names"/>
+                </DockPanel>
+
+                <!-- Sports -->
+                <TextBlock Text="Live sports" Style="{StaticResource Section}"/>
+                <CheckBox x:Name="SportsBox" Content="Show live scores for my teams"/>
+                <Grid Margin="0,4,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="Leagues" Style="{StaticResource Label}"/>
+                    <TextBox x:Name="LeaguesBox" Grid.Column="1"
+                             ToolTip="nba, wnba, ncaam, ncaaw, nfl, ncaaf, mlb, nhl, mls, epl, laliga, ucl"/>
+                    <TextBlock Grid.Row="1" Text="Favorite teams" Style="{StaticResource Label}"/>
+                    <TextBox x:Name="TeamsBox" Grid.Row="1" Grid.Column="1"
+                             ToolTip="Team abbreviations, comma-separated: NYK, BKN — or nfl:NYG to pick a league"/>
+                    <TextBlock Grid.Row="2" Text="Open scores in" Style="{StaticResource Label}"/>
+                    <TextBox x:Name="SportsUrlBox" Grid.Row="2" Grid.Column="1"
+                             ToolTip="e.g. your Fullcourt URL. Leave empty to open the ESPN game page."/>
+                </Grid>
+                <TextBlock Style="{StaticResource Hint}" Text="Leagues: nba, wnba, ncaam, ncaaw, nfl, ncaaf, mlb, nhl, mls, epl, laliga, ucl. Teams: NYK, BKN, NYG… (prefix with a league like nfl:NYJ if an abbreviation is shared)."/>
+                <CheckBox x:Name="AllLiveBox" Content="Show every live game in those leagues, not just favorites"/>
+                <CheckBox x:Name="ScorePeekBox" Content="Peek on score changes (not for basketball — too frequent)"/>
+
+                <!-- Integrations -->
+                <TextBlock Text="Integrations" Style="{StaticResource Section}"/>
+                <CheckBox x:Name="ApiBox" Content="Local API — let my apps (Amplite, Savor, Fullcourt, scripts) post activities"/>
+                <Grid Margin="0,4,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="Port" Style="{StaticResource Label}"/>
+                    <TextBox x:Name="PortBox" Grid.Column="1" Width="90" HorizontalAlignment="Left"/>
+                    <TextBlock Grid.Row="1" Text="Allowed websites" Style="{StaticResource Label}"/>
+                    <TextBox x:Name="OriginsBox" Grid.Row="1" Grid.Column="1"
+                             ToolTip="Sites allowed to call Isle from a browser, e.g. https://fullcourt.netlify.app"/>
+                </Grid>
+                <TextBlock Style="{StaticResource Hint}" Text="The API only listens on this PC (127.0.0.1). Desktop apps can always call it; websites need to be listed above. localhost dev servers are always allowed."/>
+                <TextBox x:Name="SampleBox" IsReadOnly="True" FontFamily="Cascadia Mono, Consolas" FontSize="12" TextWrapping="Wrap"/>
+
+                <!-- Updates -->
+                <TextBlock Text="Updates" Style="{StaticResource Section}"/>
+                <CheckBox x:Name="UpdatesBox" Content="Check for updates automatically"/>
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button Content="Check now" MinWidth="110" Click="CheckUpdates_Click"/>
+                    <Button Content="Release notes" MinWidth="110" Margin="8,0,0,0" Click="Releases_Click"/>
+                </StackPanel>
+
+                <!-- Advanced -->
+                <TextBlock Text="Advanced" Style="{StaticResource Section}"/>
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="Open settings folder" MinWidth="150" Click="OpenFolder_Click"/>
+                    <Button Content="Open log" MinWidth="110" Margin="8,0,0,0" Click="OpenLog_Click"/>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

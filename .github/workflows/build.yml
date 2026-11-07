@@ -1,0 +1,63 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to publish releases on tags
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish
+        shell: pwsh
+        run: |
+          $common = @('src/Isle/Isle.csproj', '-c', 'Release', '-r', 'win-x64', '-p:PublishSingleFile=true', '-p:DebugType=none')
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $version = $env:GITHUB_REF_NAME.TrimStart('v').Split('-')[0]
+            $common += "-p:VersionPrefix=$version"
+            Write-Host "Building version $version"
+          }
+
+          # Isle.exe — small; uses the shared .NET 10 Desktop Runtime (Windows offers to install it on first run).
+          dotnet publish @common --self-contained false -o out/fd
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          # Isle-standalone.exe — bundles the runtime; no prerequisites.
+          dotnet publish @common --self-contained true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:IsleFlavor=standalone -o out/sc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item out/fd/Isle.exe dist/Isle.exe
+          Copy-Item out/sc/Isle.exe dist/Isle-standalone.exe
+
+          $lines = Get-ChildItem dist -Filter *.exe | Sort-Object Name | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+          }
+          [IO.File]::WriteAllText("$PWD/dist/SHA256SUMS.txt", ($lines -join "`n") + "`n")
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Isle
+          path: dist/*
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          gh release create $tag dist/Isle.exe dist/Isle-standalone.exe dist/SHA256SUMS.txt --title "Isle $($tag.TrimStart('v'))" --generate-notes

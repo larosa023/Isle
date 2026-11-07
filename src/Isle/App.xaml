@@ -1,0 +1,18 @@
+<Application x:Class="Isle.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown">
+    <Application.Resources>
+        <!-- Defaults; ThemeManager replaces these at startup and whenever settings change. -->
+        <SolidColorBrush x:Key="Island.Background" Color="#FF000000"/>
+        <SolidColorBrush x:Key="Island.Foreground" Color="#FFFFFFFF"/>
+        <SolidColorBrush x:Key="Island.Secondary" Color="#FF8E8E93"/>
+        <SolidColorBrush x:Key="Island.Border" Color="#00000000"/>
+        <SolidColorBrush x:Key="Island.Button" Color="#FF1C1C1E"/>
+        <SolidColorBrush x:Key="Island.ButtonHover" Color="#FF2C2C2E"/>
+        <SolidColorBrush x:Key="Island.Track" Color="#33FFFFFF"/>
+        <SolidColorBrush x:Key="Island.Accent" Color="#FF0A84FF"/>
+        <SolidColorBrush x:Key="Island.PrimaryButton" Color="#FFFFFFFF"/>
+        <SolidColorBrush x:Key="Island.PrimaryButtonText" Color="#FF000000"/>
+    </Application.Resources>
+</Application>
