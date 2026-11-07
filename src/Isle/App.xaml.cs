@@ -54,12 +54,19 @@ public partial class App : Application
 
         Log.Info($"Isle {AppInfo.VersionString} starting");
         Settings = AppSettings.Load();
+        AppSettings.Current = Settings;
         ThemeManager.Apply(Settings);
         Visualizer.AnimationsEnabled = Settings.AnimatedVisualizer;
         if (Settings.StartWithWindows) StartupRegistration.Set(true); // keep the path fresh if the exe moved
         UpdateService.CleanupOldBinaries();
 
-        Hub = new ActivityHub();
+        Hub = new ActivityHub
+        {
+            Filter = a => Settings.Kind(a.Kind).Enabled && AppRegistry.IsEnabled(a.AppKey),
+            RankOf = a => a.Priority + Settings.Kind(a.Kind).Boost + AppRegistry.Boost(a.AppKey),
+            PeekAllowed = ShouldPeek,
+        };
+        AppRegistry.Changed += () => Hub.Reorder();
         Timers = new TimerService(Hub);
         Updates = new UpdateService(Hub, Settings);
 
@@ -87,14 +94,24 @@ public partial class App : Application
         }
     }
 
+    bool ShouldPeek(Activity a)
+    {
+        var s = Settings;
+        if (!s.PeekOnNewActivity || !s.Kind(a.Kind).Peek || !AppRegistry.CanPeek(a.AppKey)) return false;
+        bool urgent = a.Kind == ActivityKind.Call || (a.Kind == ActivityKind.Timer && a.Priority >= 95);
+        bool quiet = s.DoNotDisturb || s.InQuietHours(DateTime.Now);
+        return !quiet || (urgent && s.AlertUrgentWhenQuiet);
+    }
+
     void StartModules()
     {
         var s = Settings;
-        if (s.MediaEnabled) _modules.Add(new MediaService(Hub, s));
-        if (s.DownloadsEnabled) _modules.Add(new DownloadService(Hub, s));
-        if (s.CallsEnabled) _modules.Add(new CallService(Hub, s));
-        if (s.NotificationsEnabled) _modules.Add(new NotificationService(Hub, s));
-        if (s.SportsEnabled) _modules.Add(new SportsService(Hub, s));
+        if (s.Kind("media").Enabled) _modules.Add(new MediaService(Hub, s));
+        if (s.Kind("media").Enabled && s.AmpliteEnabled) _modules.Add(new AmpliteService(Hub));
+        if (s.Kind("download").Enabled) _modules.Add(new DownloadService(Hub, s));
+        if (s.Kind("call").Enabled) _modules.Add(new CallService(Hub, s));
+        if (s.Kind("notification").Enabled) _modules.Add(new NotificationService(Hub, s));
+        if (s.Kind("sports").Enabled) _modules.Add(new SportsService(Hub, s));
         if (s.ApiEnabled) _modules.Add(new IntegrationServer(Hub, s, Timers));
 
         foreach (var m in _modules)
@@ -114,21 +131,86 @@ public partial class App : Application
         _modules.Clear();
     }
 
+    /// <summary>Applies settings live. Modules only restart when something they depend on changed.</summary>
     public void ApplySettings(AppSettings s)
     {
-        bool startupChanged = s.StartWithWindows != Settings.StartWithWindows;
+        var old = Settings;
+        bool restart = old.ModuleSignature() != s.ModuleSignature();
+        bool startupChanged = s.StartWithWindows != old.StartWithWindows;
         Settings = s;
+        AppSettings.Current = s;
         s.Save();
 
         ThemeManager.Apply(s);
-        foreach (var a in Hub.Items) a.RefreshTheme();
+        foreach (var a in Hub.All) a.RefreshTheme();
+        Visualizer.AnimationsEnabled = s.AnimatedVisualizer;
         _island?.ApplySettings(s);
         Updates.UpdateSettings(s);
 
-        StopModules();
-        StartModules();
+        if (restart)
+        {
+            StopModules();
+            StartModules();
+        }
+        Hub.Reorder();
 
         if (startupChanged) StartupRegistration.Set(s.StartWithWindows);
+        SettingsApplied?.Invoke();
+    }
+
+    public event Action? SettingsApplied;
+
+    /// <summary>Puts sample cards on the island so settings changes can be previewed.</summary>
+    public void ShowDemo(string which)
+    {
+        switch (which)
+        {
+            case "timer":
+                Timers.Start(TimeSpan.FromSeconds(15), "Demo timer");
+                break;
+            case "notification":
+            {
+                var n = new Activity("demo:notification", ActivityKind.Notification)
+                {
+                    Source = "Isle",
+                    Title = "This is a notification",
+                    Subtitle = "It peeks for a few seconds, then tucks away.",
+                    Glyph = Glyphs.Bell,
+                    Priority = 90,
+                };
+                n.SetTtl(TimeSpan.FromSeconds(Math.Max(4, Settings.PeekSeconds + 1.5)));
+                Hub.Add(n);
+                Hub.ForcePeek(n);
+                break;
+            }
+            default:
+            {
+                var m = new Activity("demo:media", ActivityKind.Custom)
+                {
+                    Source = "Preview",
+                    Title = "Midnight City",
+                    Subtitle = "M83",
+                    Glyph = Glyphs.Music,
+                    Accent = System.Windows.Media.Color.FromRgb(0xBF, 0x5A, 0xF2),
+                    Progress = 0.42,
+                    ProgressLeft = "1:46",
+                    ProgressRight = "-2:17",
+                    Trailing = "Preview",
+                    Priority = 89,
+                };
+                m.Actions = new[]
+                {
+                    new IslandAction(Glyphs.Previous, null, () => { }),
+                    new IslandAction(Glyphs.Pause, null, () => { }, primary: true),
+                    new IslandAction(Glyphs.Next, null, () => { }),
+                    new IslandAction(Glyphs.Close, "Close preview", () => Hub.Remove("demo:media")),
+                };
+                m.SetTtl(TimeSpan.FromSeconds(30));
+                Hub.Add(m);
+                Hub.ForcePeek(m);
+                break;
+            }
+        }
     }
 
     public void ShowSettings()
@@ -155,6 +237,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         StopModules();
+        AppRegistry.SaveNow();
         _tray?.Dispose();
         if (_ownsMutex)
         {

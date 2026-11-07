@@ -38,6 +38,15 @@ internal static class Native
     [DllImport("shell32.dll")]
     public static extern int SHQueryUserNotificationState(out int state);
 
+    public const int WM_HOTKEY = 0x0312;
+    public const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2, MOD_SHIFT = 0x4, MOD_WIN = 0x8, MOD_NOREPEAT = 0x4000;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint modifiers, uint vk);
+
+    [DllImport("user32.dll")]
+    public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     static extern int SHGetKnownFolderPath([MarshalAs(UnmanagedType.LPStruct)] Guid id, uint flags, IntPtr token, out string path);
 
@@ -64,11 +73,11 @@ internal static class Native
         return System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
     }
 
-    /// <summary>True when a game, video or presentation is fullscreen on the primary monitor.</summary>
+    /// <summary>True when a game, video or presentation is fullscreen on the island's monitor.</summary>
     public static bool IsFullscreenActive(IntPtr self)
     {
-        // 2 = QUNS_BUSY, 3 = QUNS_RUNNING_D3D_FULL_SCREEN, 4 = QUNS_PRESENTATION_MODE
-        if (SHQueryUserNotificationState(out var state) == 0 && state is 2 or 3 or 4) return true;
+        // 3 = QUNS_RUNNING_D3D_FULL_SCREEN, 4 = QUNS_PRESENTATION_MODE
+        if (SHQueryUserNotificationState(out var state) == 0 && state is 3 or 4) return true;
 
         var fg = GetForegroundWindow();
         if (fg == IntPtr.Zero || fg == self || fg == GetShellWindow() || fg == GetDesktopWindow()) return false;
@@ -81,8 +90,9 @@ internal static class Native
 
         if (!GetWindowRect(fg, out var r)) return false;
         var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
-        if (!GetMonitorInfo(MonitorFromWindow(fg, 2), ref mi)) return false;
-        if ((mi.dwFlags & 1) == 0) return false; // island lives on the primary monitor
+        var monitor = MonitorFromWindow(fg, 2);
+        if (monitor != MonitorFromWindow(self, 2)) return false; // fullscreen on another screen
+        if (!GetMonitorInfo(monitor, ref mi)) return false;
 
         return r.Left <= mi.rcMonitor.Left && r.Top <= mi.rcMonitor.Top
             && r.Right >= mi.rcMonitor.Right && r.Bottom >= mi.rcMonitor.Bottom;

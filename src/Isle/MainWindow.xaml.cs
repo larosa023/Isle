@@ -1,7 +1,9 @@
 using System;
 using System.ComponentModel;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -10,13 +12,14 @@ using System.Windows.Threading;
 using Isle.Controls;
 using Isle.Core;
 using Microsoft.Win32;
+using Forms = System.Windows.Forms;
 
 namespace Isle;
 
 /// <summary>
 /// The island. A fixed-size, transparent, click-through, topmost tool window; only the pill
 /// itself is hit-testable. Size changes are spring animations on the pill, never on the window,
-/// which keeps resizing smooth and flicker-free.
+/// which keeps resizing smooth and flicker-free. Everything about it is driven by settings.
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -30,15 +33,15 @@ public partial class MainWindow : Window
         set => SetValue(PillRadiusProperty, value);
     }
 
-    const double BaseWidth = 480, BaseHeight = 230;
-    const double ExpandedWidth = 420, CompactWidth = 300, CompactHeight = 36, IdleWidth = 120, IdleHeight = 30;
+    const double SidePad = 24;
+    const int HotkeyId = 0x1515;
 
     readonly ActivityHub _hub;
     readonly DispatcherTimer _hoverTimer, _leaveTimer, _peekTimer, _guardTimer, _hideTimer;
     AppSettings _s;
     IntPtr _hwnd;
     Activity? _bound;
-    bool _hover, _sticky, _peeking, _expanded, _fullscreenHidden, _userHidden;
+    bool _hover, _sticky, _menuOpen, _peeking, _expanded, _fullscreenHidden, _userHidden, _hotkeyRegistered;
     (double w, double h, double r, double o) _target = (-1, -1, -1, -1);
 
     public event Action<bool>? UserHiddenChanged;
@@ -51,12 +54,12 @@ public partial class MainWindow : Window
         _s = settings;
 
         _hoverTimer = Timer(120, t => { t.Stop(); if (_hover) Expand(); });
-        _leaveTimer = Timer(380, t => { t.Stop(); if (!_hover && !_sticky && !_peeking) Collapse(); });
+        _leaveTimer = Timer(380, t => { t.Stop(); if (!_hover && !Holding) Collapse(); });
         _peekTimer = Timer(3500, t =>
         {
             t.Stop();
             _peeking = false;
-            if (!_hover && !_sticky) Collapse();
+            if (!_hover && !_sticky && !_menuOpen) Collapse();
         });
         _guardTimer = Timer(2000, _ => Guard());
         _hideTimer = Timer(3_600_000, t => { t.Stop(); SetUserHidden(false); });
@@ -70,6 +73,7 @@ public partial class MainWindow : Window
             long ex = Native.GetWindowLongPtr(_hwnd, Native.GWL_EXSTYLE).ToInt64();
             ex |= Native.WS_EX_TOOLWINDOW | Native.WS_EX_NOACTIVATE; // no Alt+Tab, never steals focus
             Native.SetWindowLongPtr(_hwnd, Native.GWL_EXSTYLE, new IntPtr(ex));
+            HwndSource.FromHwnd(_hwnd)?.AddHook(WndProc);
         };
         Loaded += (_, _) =>
         {
@@ -78,8 +82,14 @@ public partial class MainWindow : Window
         };
 
         SystemEvents.DisplaySettingsChanged += OnDisplayChanged;
-        Closed += (_, _) => SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
+        Closed += (_, _) =>
+        {
+            SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
+            if (_hotkeyRegistered) Native.UnregisterHotKey(_hwnd, HotkeyId);
+        };
     }
+
+    bool Holding => _sticky || _peeking || _menuOpen;
 
     DispatcherTimer Timer(int ms, Action<DispatcherTimer> tick)
     {
@@ -90,27 +100,175 @@ public partial class MainWindow : Window
 
     // ───────────────────────────── settings & placement ─────────────────────────────
 
+    double IdleW => Math.Clamp(_s.IdleWidth, 40, 400);
+    double IdleH => Math.Clamp(_s.IdleHeight, 8, 60);
+    double CompactW => Math.Clamp(_s.CompactWidth, 120, 600);
+    double CompactH => Math.Clamp(_s.CompactHeight, 24, 60);
+    double ExpandedW => Math.Clamp(_s.ExpandedWidth, 300, 640);
+    double Roundness => Math.Clamp(_s.Roundness, 0, 1);
+    double Speed => _s.ReduceMotion ? 1 : Math.Clamp(_s.AnimationSpeed, 0.3, 3);
+
     public void ApplySettings(AppSettings s)
     {
         _s = s;
-        double scale = Math.Clamp(s.Scale, 0.7, 1.6);
-        Root.LayoutTransform = scale == 1 ? Transform.Identity : new ScaleTransform(scale, scale);
-        Width = BaseWidth * scale;
-        Height = BaseHeight * scale;
-        Pill.Margin = new Thickness(0, Math.Clamp(s.TopOffset, 0, 80), 0, 0);
-        Visualizer.AnimationsEnabled = s.AnimatedVisualizer;
+        double scale = Math.Clamp(s.Scale, 0.6, 2.0);
+        Root.LayoutTransform = Math.Abs(scale - 1) < 0.001 ? Transform.Identity : new ScaleTransform(scale, scale);
+
+        double top = Math.Clamp(s.TopOffset, 0, 120);
+        double widest = Math.Max(ExpandedW, Math.Max(CompactW, IdleW));
+        Width = (widest + SidePad * 2) * scale;
+        Height = (top + 320) * scale;
+
+        var align = (s.Align ?? "center").ToLowerInvariant();
+        Pill.HorizontalAlignment = align switch
+        {
+            "left" => HorizontalAlignment.Left,
+            "right" => HorizontalAlignment.Right,
+            _ => HorizontalAlignment.Center,
+        };
+        Pill.Margin = new Thickness(align == "left" ? SidePad : 0, top, align == "right" ? SidePad : 0, 0);
+        Root.Opacity = Math.Clamp(s.Opacity, 0.3, 1);
+        Pill.BorderThickness = new Thickness(Math.Clamp(s.BorderThickness, 0, 4));
+        FontFamily = new FontFamily(string.IsNullOrWhiteSpace(s.FontFamily)
+            ? "Segoe UI Variable Text, Segoe UI"
+            : s.FontFamily.Trim() + ", Segoe UI");
+
+        CompactArtHost.Visibility = Vis(s.CompactShowArt);
+        CompactTitle.Visibility = Vis(s.CompactShowTitle);
+        CompactProgressHost.Visibility = Vis(s.CompactShowProgress);
+        CompactLiveHost.Visibility = Vis(s.CompactShowLiveDot);
+        CompactTrailingHost.Visibility = Vis(s.CompactShowTrailing);
+        SourceHost.Visibility = Vis(s.ExpandedShowSource);
+        ProgressHost.Visibility = Vis(s.ExpandedShowProgress);
+        ActionsHost.Visibility = Vis(s.ExpandedShowActions);
+        PositionText.Visibility = Vis(s.ExpandedShowCount);
+        BuildQuickTimers();
+
+        _hoverTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(s.HoverDelayMs, 1, 3000));
+        _leaveTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(s.CollapseDelayMs, 1, 5000));
+        Visualizer.AnimationsEnabled = s.AnimatedVisualizer && !s.ReduceMotion;
+
+        RegisterHotkey();
         Position();
         _target = (-1, -1, -1, -1);
         Refresh();
     }
 
+    static Visibility Vis(bool show) => show ? Visibility.Visible : Visibility.Collapsed;
+
+    void BuildQuickTimers()
+    {
+        QuickTimersPanel.Children.Clear();
+        QuickTimersPanel.Children.Add(new TextBlock
+        {
+            Text = Glyphs.Timer,
+            FontFamily = (FontFamily)FindResource("Icons"),
+            FontSize = 14,
+            Style = (Style)FindResource("Secondary"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 6, 0),
+        });
+        foreach (var minutes in (_s.QuickTimers ?? new()).Where(m => m > 0).Distinct().Take(5))
+        {
+            var b = new Button
+            {
+                Style = (Style)FindResource("IslandButton"),
+                Content = minutes >= 60 && minutes % 60 == 0 ? $"{minutes / 60} hr" : $"{minutes} min",
+                Tag = minutes.ToString(),
+            };
+            b.Click += OnQuickTimer;
+            QuickTimersPanel.Children.Add(b);
+        }
+    }
+
     void Position()
     {
-        Left = (SystemParameters.PrimaryScreenWidth - Width) / 2;
-        Top = 0;
+        if (_hwnd == IntPtr.Zero)
+        {
+            Left = (SystemParameters.PrimaryScreenWidth - Width) / 2;
+            Top = 0;
+            return;
+        }
+
+        var screens = Forms.Screen.AllScreens;
+        var screen = screens.FirstOrDefault(x => x.DeviceName == _s.Monitor) ?? Forms.Screen.PrimaryScreen ?? screens[0];
+        var b = screen.Bounds; // physical pixels
+
+        // Step onto the target monitor first so WPF adopts its DPI and resizes itself,
+        // then place it precisely using the window's real pixel size.
+        Native.SetWindowPos(_hwnd, Native.HWND_TOPMOST, b.Left + 1, b.Top + 1, 0, 0, Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+        if (!Native.GetWindowRect(_hwnd, out var r)) return;
+        int w = r.Right - r.Left;
+        double dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        int offset = (int)Math.Round(_s.OffsetX * dpi);
+
+        int x = (_s.Align ?? "center").ToLowerInvariant() switch
+        {
+            "left" => b.Left + offset,
+            "right" => b.Right - w - offset,
+            _ => b.Left + (b.Width - w) / 2 + offset,
+        };
+        Native.SetWindowPos(_hwnd, Native.HWND_TOPMOST, x, b.Top, 0, 0, Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
     }
 
     void OnDisplayChanged(object? sender, EventArgs e) => Ui.Post(Position);
+
+    // ───────────────────────────── hotkey ─────────────────────────────
+
+    void RegisterHotkey()
+    {
+        if (_hwnd == IntPtr.Zero) return;
+        if (_hotkeyRegistered)
+        {
+            Native.UnregisterHotKey(_hwnd, HotkeyId);
+            _hotkeyRegistered = false;
+        }
+        if (!TryParseHotkey(_s.Hotkey, out var mods, out var vk)) return;
+        _hotkeyRegistered = Native.RegisterHotKey(_hwnd, HotkeyId, mods | Native.MOD_NOREPEAT, vk);
+        if (!_hotkeyRegistered) Log.Info($"hotkey {_s.Hotkey} is taken by another app");
+    }
+
+    public bool HotkeyActive => _hotkeyRegistered;
+
+    public static bool TryParseHotkey(string? text, out uint mods, out uint vk)
+    {
+        mods = 0;
+        vk = 0;
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        foreach (var raw in text.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            switch (raw.ToLowerInvariant())
+            {
+                case "ctrl": case "control": mods |= Native.MOD_CONTROL; break;
+                case "alt": mods |= Native.MOD_ALT; break;
+                case "shift": mods |= Native.MOD_SHIFT; break;
+                case "win": case "windows": mods |= Native.MOD_WIN; break;
+                default:
+                    Key key;
+                    if (raw.Length == 1 && char.IsDigit(raw[0])) key = Key.D0 + (raw[0] - '0');
+                    else if (!Enum.TryParse(raw, true, out key)) return false;
+                    vk = (uint)KeyInterop.VirtualKeyFromKey(key);
+                    break;
+            }
+        }
+        return vk != 0 && mods != 0;
+    }
+
+    IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == Native.WM_HOTKEY && wParam.ToInt32() == HotkeyId)
+        {
+            handled = true;
+            if (_userHidden) SetUserHidden(false);
+            if (_expanded) Collapse();
+            else
+            {
+                _sticky = true;
+                Expand();
+            }
+        }
+        return IntPtr.Zero;
+    }
 
     // ───────────────────────────── state machine ─────────────────────────────
 
@@ -133,15 +291,15 @@ public partial class MainWindow : Window
 
     void OnPeek(Activity a)
     {
-        if (!_s.PeekOnNewActivity || _fullscreenHidden || _userHidden) return;
-        if (_hover || _sticky || (_expanded && !_peeking)) return; // the user is already looking
+        if (_fullscreenHidden || _userHidden) return;
+        if (_hover || _sticky || _menuOpen || (_expanded && !_peeking)) return; // the user is already looking
 
         _peeking = true;
         _expanded = true;
         _hub.Pinned = a;
         Refresh();
         _peekTimer.Stop();
-        _peekTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(_s.PeekSeconds, 1, 15));
+        _peekTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(_s.PeekSeconds, 1, 20));
         _peekTimer.Start();
     }
 
@@ -158,24 +316,32 @@ public partial class MainWindow : Window
         {
             var layer = a == null ? IdleLayer : ExpandedLayer;
             if (a == null) UpdateClock();
-            w = ExpandedWidth;
+            w = ExpandedW;
             h = MeasureLayer(layer, w);
-            r = Math.Min(30, h / 2);
+            r = Math.Min(32, h / 2) * Roundness;
             ShowOnly(layer, delayIn: true);
         }
         else if (a == null)
         {
-            w = IdleWidth;
-            h = IdleHeight;
-            r = IdleHeight / 2;
+            w = IdleW;
+            h = IdleH;
+            r = h / 2 * Roundness;
             o = _s.HideWhenIdle ? 0 : 1;
-            ShowOnly(null, delayIn: false);
+            if (_s.IdleShowClock && !_s.HideWhenIdle)
+            {
+                UpdateClock();
+                ShowOnly(IdleCompactLayer, delayIn: false);
+            }
+            else
+            {
+                ShowOnly(null, delayIn: false);
+            }
         }
         else
         {
-            w = CompactWidth;
-            h = CompactHeight;
-            r = CompactHeight / 2;
+            w = CompactW;
+            h = CompactH;
+            r = h / 2 * Roundness;
             ShowOnly(CompactLayer, delayIn: false);
         }
 
@@ -204,6 +370,7 @@ public partial class MainWindow : Window
             case nameof(Activity.HasProgress):
             case nameof(Activity.HasSubtitle):
             case nameof(Activity.Subtitle):
+            case nameof(Activity.HasSource):
                 Dispatcher.InvokeAsync(Refresh, DispatcherPriority.Loaded);
                 break;
         }
@@ -220,20 +387,22 @@ public partial class MainWindow : Window
         SetLayer(CompactLayer, ReferenceEquals(visible, CompactLayer), delayIn);
         SetLayer(ExpandedLayer, ReferenceEquals(visible, ExpandedLayer), delayIn);
         SetLayer(IdleLayer, ReferenceEquals(visible, IdleLayer), delayIn);
+        SetLayer(IdleCompactLayer, ReferenceEquals(visible, IdleCompactLayer), delayIn);
     }
 
-    static void SetLayer(FrameworkElement el, bool show, bool delayIn)
+    void SetLayer(FrameworkElement el, bool show, bool delayIn)
     {
         var state = el.Tag as string;
+        double k = 1 / Speed;
         if (show)
         {
             if (state == "on") return;
             el.Tag = "on";
             el.Visibility = Visibility.Visible;
             el.IsHitTestVisible = true;
-            el.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(200))
+            el.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(200 * k))
             {
-                BeginTime = delayIn ? TimeSpan.FromMilliseconds(110) : TimeSpan.FromMilliseconds(40),
+                BeginTime = TimeSpan.FromMilliseconds((delayIn ? 110 : 40) * k),
             });
         }
         else
@@ -241,7 +410,7 @@ public partial class MainWindow : Window
             if (state != "on") return;
             el.Tag = "off";
             el.IsHitTestVisible = false;
-            var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(110));
+            var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(110 * k));
             fade.Completed += (_, _) => { if (el.Tag as string == "off") el.Visibility = Visibility.Hidden; };
             el.BeginAnimation(OpacityProperty, fade);
         }
@@ -253,15 +422,17 @@ public partial class MainWindow : Window
         bool growing = w * h > Math.Max(0, _target.w) * Math.Max(0, _target.h);
         _target = (w, h, r, o);
 
-        var duration = TimeSpan.FromMilliseconds(growing ? 520 : 360);
-        IEasingFunction ease = growing
-            ? new BackEase { Amplitude = 0.22, EasingMode = EasingMode.EaseOut } // a touch of spring
+        double baseMs = _s.ReduceMotion ? 150 : growing ? 520 : 360;
+        var duration = TimeSpan.FromMilliseconds(baseMs / Speed);
+        double spring = Math.Clamp(_s.Springiness, 0, 1);
+        IEasingFunction ease = growing && !_s.ReduceMotion && spring > 0.01
+            ? new BackEase { Amplitude = spring, EasingMode = EasingMode.EaseOut }
             : new CubicEase { EasingMode = EasingMode.EaseOut };
 
         Pill.BeginAnimation(WidthProperty, new DoubleAnimation(w, duration) { EasingFunction = ease });
         Pill.BeginAnimation(HeightProperty, new DoubleAnimation(h, duration) { EasingFunction = ease });
         BeginAnimation(PillRadiusProperty, new DoubleAnimation(r, duration) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
-        Pill.BeginAnimation(OpacityProperty, new DoubleAnimation(o, TimeSpan.FromMilliseconds(220)));
+        Pill.BeginAnimation(OpacityProperty, new DoubleAnimation(o, TimeSpan.FromMilliseconds(220 / Speed)));
     }
 
     void UpdateClock()
@@ -269,6 +440,7 @@ public partial class MainWindow : Window
         var now = DateTime.Now;
         IdleTime.Text = now.ToString("h:mm tt");
         IdleDate.Text = now.ToString("dddd, MMMM d");
+        IdleCompactLayer.Text = now.ToString("h:mm");
     }
 
     // ───────────────────────────── visibility guard ─────────────────────────────
@@ -288,7 +460,7 @@ public partial class MainWindow : Window
             // Some shell surfaces (taskbar, Start) can climb over topmost windows; reassert.
             Native.SetWindowPos(_hwnd, Native.HWND_TOPMOST, 0, 0, 0, 0,
                 Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | Native.SWP_NOOWNERZORDER);
-            if (_expanded && _hub.Current == null) UpdateClock();
+            if (_hub.Current == null && (_expanded || _s.IdleShowClock)) UpdateClock();
         }
     }
 
@@ -310,7 +482,11 @@ public partial class MainWindow : Window
     {
         bool hide = _userHidden || _fullscreenHidden;
         if (hide && IsVisible) Hide();
-        else if (!hide && !IsVisible) Show();
+        else if (!hide && !IsVisible)
+        {
+            Show();
+            Position();
+        }
     }
 
     // ───────────────────────────── input ─────────────────────────────
@@ -338,13 +514,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        var open = _hub.Current?.OnOpen;
+        var open = _s.ClickOpensActivity ? _hub.Current?.OnOpen : null;
         if (open != null)
         {
             try { open(); } catch (Exception ex) { Log.Error("open activity", ex); }
             Collapse();
         }
-        else if (_sticky || !_hover)
+        else if (_sticky || !_hover || !_s.HoverToExpand)
         {
             Collapse(); // clicked open earlier: a second click closes it
         }
@@ -352,7 +528,7 @@ public partial class MainWindow : Window
 
     void Pill_Wheel(object sender, MouseWheelEventArgs e)
     {
-        if (_hub.Items.Count < 2) return;
+        if (!_s.ScrollToSwitch || _hub.Items.Count < 2) return;
         _hub.Cycle(e.Delta < 0 ? 1 : -1);
         e.Handled = true;
     }
@@ -360,17 +536,30 @@ public partial class MainWindow : Window
     void Pill_RightClick(object sender, MouseButtonEventArgs e)
     {
         var app = App.Instance;
-        var menu = new ContextMenu { PlacementTarget = Pill };
+        var menu = new ContextMenu();
 
         var timers = new MenuItem { Header = "New timer" };
         foreach (var minutes in new[] { 1, 5, 10, 15, 25, 45, 60 })
         {
             var m = minutes;
-            var item = new MenuItem { Header = $"{m} min" };
-            item.Click += (_, _) => app.Timers.Start(TimeSpan.FromMinutes(m));
-            timers.Items.Add(item);
+            timers.Items.Add(Item($"{m} min", () => app.Timers.Start(TimeSpan.FromMinutes(m))));
         }
         menu.Items.Add(timers);
+
+        if (_hub.Current is { AppKey: string key } current)
+        {
+            var name = AppRegistry.Get(key)?.Name ?? current.Source ?? "this app";
+            menu.Items.Add(Item($"Hide {name}", () => HideApp(key, name)));
+        }
+
+        var dnd = new MenuItem { Header = "Do not disturb", IsCheckable = true, IsChecked = _s.DoNotDisturb };
+        dnd.Click += (_, _) =>
+        {
+            var s = app.Settings.Clone();
+            s.DoNotDisturb = !s.DoNotDisturb;
+            app.ApplySettings(s);
+        };
+        menu.Items.Add(dnd);
         menu.Items.Add(new Separator());
         menu.Items.Add(Item("Settings…", app.ShowSettings));
         menu.Items.Add(Item("Check for updates", () => _ = app.Updates.CheckAsync(manual: true)));
@@ -378,25 +567,59 @@ public partial class MainWindow : Window
         menu.Items.Add(new Separator());
         menu.Items.Add(Item("Quit Isle", app.Quit));
 
-        menu.IsOpen = true;
+        OpenMenu(menu, Pill);
         e.Handled = true;
+    }
 
-        static MenuItem Item(string header, Action action)
+    static void HideApp(string key, string name)
+    {
+        var rule = AppRegistry.Get(key) ?? AppRegistry.Seen(key, name, key.Split(':')[0]);
+        rule.Enabled = false;
+        AppRegistry.Update(rule);
+    }
+
+    static MenuItem Item(string header, Action action)
+    {
+        var mi = new MenuItem { Header = header };
+        mi.Click += (_, _) => action();
+        return mi;
+    }
+
+    void OpenMenu(ContextMenu menu, UIElement target)
+    {
+        menu.PlacementTarget = target;
+        menu.Placement = PlacementMode.Bottom;
+        _menuOpen = true;
+        _leaveTimer.Stop();
+        menu.Closed += (_, _) =>
         {
-            var mi = new MenuItem { Header = header };
-            mi.Click += (_, _) => action();
-            return mi;
-        }
+            _menuOpen = false;
+            if (!_hover) _leaveTimer.Start();
+        };
+        menu.IsOpen = true;
     }
 
     void OnActionClick(object sender, RoutedEventArgs e)
     {
         e.Handled = true;
-        if ((sender as FrameworkElement)?.DataContext is IslandAction action)
+        if ((sender as FrameworkElement)?.DataContext is not IslandAction action) return;
+
+        if (action.Menu is { Count: > 0 } items)
         {
-            try { action.Invoke(); }
-            catch (Exception ex) { Log.Error("island action", ex); }
+            var menu = new ContextMenu();
+            foreach (var item in items)
+            {
+                var it = item;
+                var mi = new MenuItem { Header = it.Label, IsChecked = it.Checked };
+                mi.Click += (_, _) => it.Invoke();
+                menu.Items.Add(mi);
+            }
+            OpenMenu(menu, (UIElement)sender);
+            return;
         }
+
+        try { action.Invoke(); }
+        catch (Exception ex) { Log.Error("island action", ex); }
     }
 
     void OnQuickTimer(object sender, RoutedEventArgs e)

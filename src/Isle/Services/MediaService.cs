@@ -20,7 +20,7 @@ public sealed class MediaService : IModule
     const string Id = "media";
 
     readonly ActivityHub _hub;
-    readonly AppSettings _s;
+    static AppSettings S => AppSettings.Current;
     readonly DispatcherTimer _tick;
 
     GlobalSystemMediaTransportControlsSessionManager? _mgr;
@@ -36,8 +36,7 @@ public sealed class MediaService : IModule
     public MediaService(ActivityHub hub, AppSettings settings)
     {
         _hub = hub;
-        _s = settings;
-        _tick = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
+                _tick = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
         _tick.Tick += (_, _) => Tick();
     }
 
@@ -49,7 +48,9 @@ public sealed class MediaService : IModule
             if (_disposed) return;
             _mgr.CurrentSessionChanged += OnCurrentSessionChanged;
             _mgr.SessionsChanged += OnSessionsChanged;
-            Attach(_mgr.GetCurrentSession());
+            AppRegistry.Changed += OnRulesChanged;
+            AmpliteService.StateChanged += OnRulesChanged;
+            Attach(Choose());
             _tick.Start();
         }
         catch (Exception ex)
@@ -61,12 +62,67 @@ public sealed class MediaService : IModule
     void OnCurrentSessionChanged(GlobalSystemMediaTransportControlsSessionManager m, CurrentSessionChangedEventArgs e) => Reattach(m);
     void OnSessionsChanged(GlobalSystemMediaTransportControlsSessionManager m, SessionsChangedEventArgs e) => Reattach(m);
 
-    void Reattach(GlobalSystemMediaTransportControlsSessionManager m) => Ui.Post(() =>
+    void Reattach(GlobalSystemMediaTransportControlsSessionManager m) => Ui.Post(Reselect);
+
+    void OnRulesChanged() => Ui.Post(Reselect);
+
+    void Reselect()
     {
-        if (_disposed) return;
-        try { Attach(m.GetCurrentSession()); }
-        catch (Exception ex) { Log.Error("media reattach", ex); }
-    });
+        if (_disposed || _mgr == null) return;
+        try
+        {
+            var next = Choose();
+            if (next?.SourceAppUserModelId != _session?.SourceAppUserModelId || (next == null) != (_session == null))
+                Attach(next);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("media reselect", ex);
+        }
+    }
+
+    static string KeyFor(string? aumid) => "media:" + AppName(aumid).ToLowerInvariant().Replace(' ', '-');
+
+    /// <summary>
+    /// Picks which app's media to show: skips apps the user turned off, and Amplite's own sessions
+    /// (the Amplite card covers them) — plus Spotify while Amplite is playing, since that's usually
+    /// Amplite's fallback player. Prefers whatever is playing.
+    /// </summary>
+    GlobalSystemMediaTransportControlsSession? Choose()
+    {
+        if (_mgr == null) return null;
+        var sessions = _mgr.GetSessions();
+        var current = _mgr.GetCurrentSession();
+        var allowed = new List<(GlobalSystemMediaTransportControlsSession s, bool playing)>();
+
+        foreach (var s in sessions)
+        {
+            string aumid;
+            try { aumid = s.SourceAppUserModelId ?? ""; } catch { continue; }
+            var id = aumid.ToLowerInvariant();
+            bool amplite = id.Contains("amplite");
+            if (amplite && S.AmpliteEnabled && AmpliteService.IsConnected) continue;
+            if (!amplite) AppRegistry.Seen(KeyFor(aumid), AppName(aumid), "media");
+            if (!AppRegistry.IsEnabled(KeyFor(aumid))) continue;
+            if (id.Contains("spotify") && S.AmplitePreferOverSpotify && AmpliteService.HasTrack) continue;
+
+            bool playing = false;
+            try { playing = s.GetPlaybackInfo().PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing; } catch { }
+            allowed.Add((s, playing));
+        }
+
+        string? currentId = null;
+        try { currentId = current?.SourceAppUserModelId; } catch { }
+        var cur = allowed.Find(x => x.s.SourceAppUserModelId == currentId);
+        if (cur.s != null && cur.playing) return cur.s;
+        var anyPlaying = allowed.Find(x => x.playing);
+        if (anyPlaying.s != null) return anyPlaying.s;
+        if (cur.s != null) return cur.s;
+        // Keep showing the paused session we already had, if it's still allowed.
+        var kept = allowed.Find(x => x.s.SourceAppUserModelId == _session?.SourceAppUserModelId);
+        if (kept.s != null) return kept.s;
+        return allowed.Count > 0 ? allowed[0].s : null;
+    }
 
     void Attach(GlobalSystemMediaTransportControlsSession? session)
     {
@@ -139,6 +195,7 @@ public sealed class MediaService : IModule
         a.Title = title;
         a.Subtitle = string.IsNullOrWhiteSpace(artist) ? props.AlbumTitle : artist;
         a.Source = AppName(session.SourceAppUserModelId);
+        a.AppKey = KeyFor(session.SourceAppUserModelId);
         a.OnOpen = null;
 
         var key = title + "\n" + artist;
@@ -150,7 +207,7 @@ public sealed class MediaService : IModule
             if (_disposed || version != _propsVersion) return;
             a.Image = image;
             a.Accent = accent;
-            if (newTrack && _playing && _s.MediaPeekOnTrackChange) _hub.Peek(a);
+            if (newTrack && _playing && S.MediaPeekOnTrackChange) _hub.Peek(a);
         }
 
         ApplyState();
@@ -266,13 +323,16 @@ public sealed class MediaService : IModule
         Tick();
     }
 
+    int _ticks;
+
     void Tick()
     {
+        if (++_ticks % 3 == 0) Reselect(); // a background app may have started playing
         var a = _hub.Get(Id);
         if (a == null) return;
 
-        if (!_playing && _pausedSince is DateTime since && _s.MediaHidePausedAfterMinutes > 0
-            && DateTime.UtcNow - since > TimeSpan.FromMinutes(_s.MediaHidePausedAfterMinutes))
+        if (!_playing && _pausedSince is DateTime since && S.MediaHidePausedAfterMinutes > 0
+            && DateTime.UtcNow - since > TimeSpan.FromMinutes(S.MediaHidePausedAfterMinutes))
         {
             _hub.Remove(Id);
             _trackKey = null;
@@ -334,6 +394,8 @@ public sealed class MediaService : IModule
     {
         _disposed = true;
         _tick.Stop();
+        AppRegistry.Changed -= OnRulesChanged;
+        AmpliteService.StateChanged -= OnRulesChanged;
         Detach();
         if (_mgr != null)
         {

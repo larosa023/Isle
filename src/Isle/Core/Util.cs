@@ -93,6 +93,12 @@ public static class Http
 {
     public static readonly HttpClient Client = Create();
 
+    /// <summary>For apps on this PC (Amplite, API callbacks): never goes through a proxy.</summary>
+    public static readonly HttpClient Local = new(new SocketsHttpHandler { UseProxy = false, ConnectTimeout = TimeSpan.FromSeconds(2) })
+    {
+        Timeout = TimeSpan.FromSeconds(4),
+    };
+
     static HttpClient Create()
     {
         var c = new HttpClient(new SocketsHttpHandler

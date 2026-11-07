@@ -35,15 +35,14 @@ public sealed class CallService : IModule
     };
 
     readonly ActivityHub _hub;
-    readonly AppSettings _s;
+    static AppSettings S => AppSettings.Current;
     readonly DispatcherTimer _poll;
     readonly Dictionary<string, DateTime> _active = new(StringComparer.OrdinalIgnoreCase); // name -> started (UTC)
 
     public CallService(ActivityHub hub, AppSettings settings)
     {
         _hub = hub;
-        _s = settings;
-        _poll = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1.5) };
+                _poll = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1.5) };
         _poll.Tick += (_, _) => Poll();
     }
 
@@ -94,6 +93,8 @@ public sealed class CallService : IModule
         foreach (var (name, info) in users)
         {
             var id = IdFor(name);
+            var appKey = "mic:" + name.ToLowerInvariant();
+            AppRegistry.Seen(appKey, name, "mic");
             if (!_active.ContainsKey(name))
             {
                 _active[name] = info.started;
@@ -106,6 +107,7 @@ public sealed class CallService : IModule
                     Accent = info.call ? Green : Amber,
                     Priority = info.call ? 100 : 30,
                     IsLive = true,
+                    AppKey = appKey,
                 };
                 _hub.Add(a);
                 if (info.call) _hub.Peek(a);
@@ -136,7 +138,7 @@ public sealed class CallService : IModule
 
         var known = Known.FirstOrDefault(k => lower.Contains(k.match));
         bool isCall = known.match != null && known.call;
-        if (!isCall && !_s.ShowAnyMicUse) return;
+        if (!isCall && !S.ShowAnyMicUse) return;
 
         var name = known.match != null ? known.name : Prettify(ident);
         DateTime started;

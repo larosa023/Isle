@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text.Json;
 
@@ -15,58 +16,148 @@ public sealed class CustomThemeColors
     public string ButtonHover { get; set; } = "#FF2C2C2E";
 }
 
-/// <summary>Persisted to %AppData%\Isle\settings.json.</summary>
+/// <summary>Per activity type: show it at all, let it peek, and nudge its priority.</summary>
+public sealed class KindRule
+{
+    public bool Enabled { get; set; } = true;
+    public bool Peek { get; set; } = true;
+    public int Boost { get; set; }
+}
+
+/// <summary>Persisted to %AppData%\Isle\settings.json. Modules read <see cref="Current"/> live.</summary>
 public sealed class AppSettings
 {
-    // Appearance
+    /// <summary>The settings in effect right now.</summary>
+    public static AppSettings Current { get; set; } = new();
+
+    // ── Appearance ──
     public string Theme { get; set; } = "midnight";           // midnight | graphite | glass | frost | custom
-    public string Accent { get; set; } = "auto";               // "auto" (album art / team colors) or a color like #0A84FF
+    public string Accent { get; set; } = "auto";               // "auto" (album art / team colors) or #RRGGBB
     public CustomThemeColors CustomTheme { get; set; } = new();
-    public double Scale { get; set; } = 1.0;
-    public double TopOffset { get; set; } = 6;
-    public bool HideWhenIdle { get; set; }
-    public bool HideInFullscreen { get; set; } = true;
+    public double Opacity { get; set; } = 1.0;
+    public double BorderThickness { get; set; } = 1;
+    public string FontFamily { get; set; } = "";               // empty = Segoe UI Variable
     public bool AnimatedVisualizer { get; set; } = true;
 
-    // Behavior
+    // ── Island shape & placement ──
+    public string Monitor { get; set; } = "";                  // device name, empty = primary
+    public string Align { get; set; } = "center";              // left | center | right
+    public double OffsetX { get; set; }
+    public double TopOffset { get; set; } = 6;
+    public double Scale { get; set; } = 1.0;
+    public double IdleWidth { get; set; } = 120;
+    public double IdleHeight { get; set; } = 30;
+    public double CompactWidth { get; set; } = 300;
+    public double CompactHeight { get; set; } = 36;
+    public double ExpandedWidth { get; set; } = 420;
+    public double Roundness { get; set; } = 1.0;               // 0 = square-ish, 1 = full pill
+
+    // What the pill shows
+    public bool CompactShowArt { get; set; } = true;
+    public bool CompactShowTitle { get; set; } = true;
+    public bool CompactShowTrailing { get; set; } = true;
+    public bool CompactShowProgress { get; set; } = true;
+    public bool CompactShowLiveDot { get; set; } = true;
+    public bool ExpandedShowSource { get; set; } = true;
+    public bool ExpandedShowProgress { get; set; } = true;
+    public bool ExpandedShowActions { get; set; } = true;
+    public bool ExpandedShowCount { get; set; } = true;
+    public bool IdleShowClock { get; set; }
+    public bool HideWhenIdle { get; set; }
+    public List<int> QuickTimers { get; set; } = new() { 1, 5, 10, 25 };
+
+    // ── Behavior & motion ──
     public bool HoverToExpand { get; set; } = true;
+    public int HoverDelayMs { get; set; } = 120;
+    public int CollapseDelayMs { get; set; } = 380;
+    public bool ClickOpensActivity { get; set; } = true;
+    public bool ScrollToSwitch { get; set; } = true;
     public bool PeekOnNewActivity { get; set; } = true;
     public double PeekSeconds { get; set; } = 3.5;
+    public bool HideInFullscreen { get; set; } = true;
+    public double AnimationSpeed { get; set; } = 1.0;
+    public double Springiness { get; set; } = 0.22;
+    public bool ReduceMotion { get; set; }
+    public string Hotkey { get; set; } = "Ctrl+Alt+I";
     public bool StartWithWindows { get; set; }
 
+    // Do not disturb
+    public bool DoNotDisturb { get; set; }
+    public bool QuietHoursEnabled { get; set; }
+    public string QuietFrom { get; set; } = "22:00";
+    public string QuietTo { get; set; } = "07:00";
+    public bool AlertUrgentWhenQuiet { get; set; } = true;     // calls and finished timers still peek
+
+    // ── Activity types ──
+    public Dictionary<string, KindRule> Kinds { get; set; } = new()
+    {
+        ["media"] = new(), ["timer"] = new(), ["download"] = new(), ["call"] = new(),
+        ["notification"] = new() { Enabled = false }, ["sports"] = new(), ["update"] = new(), ["custom"] = new(),
+    };
+
     // Now playing
-    public bool MediaEnabled { get; set; } = true;
     public bool MediaPeekOnTrackChange { get; set; }
     public int MediaHidePausedAfterMinutes { get; set; } = 10;
 
-    // Downloads
-    public bool DownloadsEnabled { get; set; } = true;
-    public string DownloadsFolder { get; set; } = "";          // empty = the Windows Downloads folder
+    // Amplite
+    public bool AmpliteEnabled { get; set; } = true;
+    public bool AmplitePreferOverSpotify { get; set; } = true;
+    public bool AmpliteShowLike { get; set; } = true;
+    public bool AmpliteShowEq { get; set; } = true;
+    public bool AmpliteShowEqInTitle { get; set; } = true;
 
-    // Calls / microphone
-    public bool CallsEnabled { get; set; } = true;
+    // Downloads
+    public string DownloadsFolder { get; set; } = "";
+
+    // Calls
     public bool ShowAnyMicUse { get; set; } = true;
 
-    // Windows notifications (experimental)
-    public bool NotificationsEnabled { get; set; }
-    public List<string> MutedApps { get; set; } = new();
-
     // Sports
-    public bool SportsEnabled { get; set; } = true;
     public List<string> SportsLeagues { get; set; } = new() { "nba", "nfl" };
-    public List<string> FavoriteTeams { get; set; } = new(); // "NYK", or "nba:NYK" to pin a league
+    public List<string> FavoriteTeams { get; set; } = new();
     public bool SportsShowAllLive { get; set; }
     public bool SportsPeekOnScore { get; set; } = true;
-    public string SportsOpenUrl { get; set; } = "";            // e.g. your Fullcourt URL; empty = ESPN game page
+    public string SportsOpenUrl { get; set; } = "";
 
-    // Local integration API (Amplite, Savor, Fullcourt, scripts…)
+    // Local API
     public bool ApiEnabled { get; set; } = true;
     public int ApiPort { get; set; } = 47820;
-    public List<string> AllowedOrigins { get; set; } = new(); // websites allowed to call the API from a browser
+    public List<string> AllowedOrigins { get; set; } = new();
 
     // Updates
     public bool AutoCheckUpdates { get; set; } = true;
     public string SkippedVersion { get; set; } = "";
+
+    public KindRule Kind(ActivityKind kind) => Kind(KindKey(kind));
+
+    public KindRule Kind(string key)
+    {
+        if (!Kinds.TryGetValue(key, out var rule))
+        {
+            rule = new KindRule { Enabled = key != "notification" };
+            Kinds[key] = rule;
+        }
+        return rule;
+    }
+
+    public static string KindKey(ActivityKind kind) => kind.ToString().ToLowerInvariant();
+
+    public bool InQuietHours(DateTime now)
+    {
+        if (!QuietHoursEnabled) return false;
+        if (!TimeSpan.TryParse(QuietFrom, CultureInfo.InvariantCulture, out var from) ||
+            !TimeSpan.TryParse(QuietTo, CultureInfo.InvariantCulture, out var to)) return false;
+        var t = now.TimeOfDay;
+        return from <= to ? t >= from && t < to : t >= from || t < to; // handles overnight ranges
+    }
+
+    /// <summary>Settings that require modules to be restarted when they change.</summary>
+    public string ModuleSignature() => JsonSerializer.Serialize(new
+    {
+        media = Kind("media").Enabled, download = Kind("download").Enabled, call = Kind("call").Enabled,
+        notification = Kind("notification").Enabled, sports = Kind("sports").Enabled,
+        DownloadsFolder, ApiEnabled, ApiPort, AmpliteEnabled,
+    });
 
     static readonly JsonSerializerOptions Options = new()
     {

@@ -9,7 +9,10 @@ namespace Isle.Core;
 
 public enum ActivityKind { Media, Timer, Download, Call, Notification, Sports, Update, Custom }
 
-/// <summary>A button shown in the expanded island.</summary>
+/// <summary>An entry in a button's drop-down menu.</summary>
+public sealed record IslandMenuItem(string Label, bool Checked, Action Invoke);
+
+/// <summary>A button shown in the expanded island. With a <see cref="Menu"/>, clicking opens it.</summary>
 public sealed class IslandAction
 {
     public IslandAction(string glyph, string? label, Action invoke, bool primary = false)
@@ -19,6 +22,14 @@ public sealed class IslandAction
         Invoke = invoke;
         Primary = primary;
     }
+
+    public IslandAction(string glyph, string? label, IReadOnlyList<IslandMenuItem> menu)
+        : this(glyph, label, () => { })
+    {
+        Menu = menu;
+    }
+
+    public IReadOnlyList<IslandMenuItem>? Menu { get; }
 
     public string Glyph { get; }
     public string? Label { get; }
@@ -45,6 +56,9 @@ public sealed class Activity : INotifyPropertyChanged
     public string Id { get; }
     public ActivityKind Kind { get; }
     public DateTime CreatedAt { get; } = DateTime.UtcNow;
+
+    /// <summary>Which app this came from, for per-app rules (e.g. "media:spotify"). Null = no app rule.</summary>
+    public string? AppKey { get; set; }
 
     /// <summary>When set, the hub removes the activity after this time (UTC).</summary>
     public DateTime? ExpiresAt { get; set; }

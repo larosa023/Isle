@@ -47,15 +47,14 @@ public sealed class SportsService : IModule
     }
 
     readonly ActivityHub _hub;
-    readonly AppSettings _s;
+    static AppSettings S => AppSettings.Current;
     readonly CancellationTokenSource _cts = new();
     readonly Dictionary<string, Seen> _seen = new();
 
     public SportsService(ActivityHub hub, AppSettings settings)
     {
         _hub = hub;
-        _s = settings;
-    }
+            }
 
     public void Start() => _ = LoopAsync(_cts.Token);
 
@@ -69,15 +68,15 @@ public sealed class SportsService : IModule
             var next = TimeSpan.FromMinutes(5);
             try
             {
-                var favorites = ParseFavorites(_s.FavoriteTeams);
-                if (favorites.Count == 0 && !_s.SportsShowAllLive)
+                var favorites = ParseFavorites(S.FavoriteTeams);
+                if (favorites.Count == 0 && !S.SportsShowAllLive)
                 {
                     next = TimeSpan.FromMinutes(10);
                 }
                 else
                 {
                     var games = new List<Game>();
-                    foreach (var league in _s.SportsLeagues.Select(l => l.Trim().ToLowerInvariant()).Distinct())
+                    foreach (var league in S.SportsLeagues.Select(l => l.Trim().ToLowerInvariant()).Distinct())
                     {
                         if (!LeaguePaths.TryGetValue(league, out var path)) continue;
                         try { games.AddRange(await FetchAsync(league, path, favorites, ct).ConfigureAwait(false)); }
@@ -157,7 +156,7 @@ public sealed class SportsService : IModule
             var fav = favorites.FirstOrDefault(f =>
                 (f.League == null || f.League == league) &&
                 (f.Abbr.Equals(awayAbbr, StringComparison.OrdinalIgnoreCase) || f.Abbr.Equals(homeAbbr, StringComparison.OrdinalIgnoreCase)));
-            bool relevant = fav != null || (_s.SportsShowAllLive && state == "in");
+            bool relevant = fav != null || (S.SportsShowAllLive && state == "in");
             if (!relevant) continue;
 
             var favSide = fav != null && fav.Abbr.Equals(awayAbbr, StringComparison.OrdinalIgnoreCase) ? away : home;
@@ -202,7 +201,7 @@ public sealed class SportsService : IModule
                 bool newlyLive = !seen.WasLive;
                 seen.Score = score;
                 seen.WasLive = true;
-                if (newlyLive || (changed && _s.SportsPeekOnScore && g.Sport != "basketball")) _hub.Peek(a);
+                if (newlyLive || (changed && S.SportsPeekOnScore && g.Sport != "basketball")) _hub.Peek(a);
             }
             else if (g.State == "post")
             {
@@ -241,7 +240,7 @@ public sealed class SportsService : IModule
         a.Glyph = Glyphs.Sports;
         a.Source = g.League.ToUpperInvariant();
         a.Accent = g.Accent;
-        var url = string.IsNullOrWhiteSpace(_s.SportsOpenUrl) ? g.Link : _s.SportsOpenUrl;
+        var url = string.IsNullOrWhiteSpace(S.SportsOpenUrl) ? g.Link : S.SportsOpenUrl;
         if (!string.IsNullOrWhiteSpace(url))
         {
             a.OnOpen = () => Ui.OpenUrl(url!);

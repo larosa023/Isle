@@ -26,10 +26,11 @@ public sealed class DownloadService : IModule
         public DateTime LastSample;
         public DateTime LastGrowth;
         public double Speed;
+        public string? AppKey;
     }
 
     readonly ActivityHub _hub;
-    readonly AppSettings _s;
+    static AppSettings S => AppSettings.Current;
     readonly Dictionary<string, Tracked> _tracked = new(StringComparer.OrdinalIgnoreCase);
     readonly DispatcherTimer _poll;
     FileSystemWatcher? _watcher;
@@ -38,14 +39,13 @@ public sealed class DownloadService : IModule
     public DownloadService(ActivityHub hub, AppSettings settings)
     {
         _hub = hub;
-        _s = settings;
-        _poll = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
+                _poll = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
         _poll.Tick += (_, _) => Poll();
     }
 
     public void Start()
     {
-        var folder = string.IsNullOrWhiteSpace(_s.DownloadsFolder) ? Native.DownloadsFolder() : _s.DownloadsFolder;
+        var folder = string.IsNullOrWhiteSpace(S.DownloadsFolder) ? Native.DownloadsFolder() : S.DownloadsFolder;
         if (!Directory.Exists(folder))
         {
             Log.Info("downloads folder not found: " + folder);
@@ -66,6 +66,15 @@ public sealed class DownloadService : IModule
 
     static bool IsPartial(string path) =>
         PartialExtensions.Any(ext => path.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+
+    static (string key, string name) Browser(string partialPath)
+    {
+        var p = partialPath.ToLowerInvariant();
+        if (p.EndsWith(".crdownload")) return ("download:chromium", "Chrome / Edge / Brave");
+        if (p.EndsWith(".part")) return ("download:firefox", "Firefox");
+        if (p.EndsWith(".opdownload")) return ("download:opera", "Opera");
+        return ("download:other", "Other downloads");
+    }
 
     static string DisplayName(string partialPath)
     {
@@ -122,8 +131,12 @@ public sealed class DownloadService : IModule
         };
         _tracked[path] = t;
 
+        var (appKey, appName) = Browser(path);
+        AppRegistry.Seen(appKey, appName, "download");
+        t.AppKey = appKey;
         var a = new Activity(t.ActivityId, ActivityKind.Download)
         {
+            AppKey = appKey,
             Glyph = Glyphs.Download,
             Source = "Downloading",
             Priority = 65,
@@ -211,6 +224,7 @@ public sealed class DownloadService : IModule
             Priority = 80,
             Accent = Green,
             Trailing = "Done",
+            AppKey = t.AppKey,
             OnOpen = () => Ui.OpenUrl(finalPath),
         };
         done.Actions = new[]

@@ -92,7 +92,7 @@ public sealed class IntegrationServer : IModule
     };
 
     readonly ActivityHub _hub;
-    readonly AppSettings _s;
+    static AppSettings S => AppSettings.Current;
     readonly TimerService _timers;
     readonly CancellationTokenSource _cts = new();
     TcpListener? _listener;
@@ -100,22 +100,21 @@ public sealed class IntegrationServer : IModule
     public IntegrationServer(ActivityHub hub, AppSettings settings, TimerService timers)
     {
         _hub = hub;
-        _s = settings;
-        _timers = timers;
+                _timers = timers;
     }
 
     public void Start()
     {
         try
         {
-            _listener = new TcpListener(IPAddress.Loopback, _s.ApiPort);
+            _listener = new TcpListener(IPAddress.Loopback, S.ApiPort);
             _listener.Start();
             _ = AcceptLoopAsync(_cts.Token);
-            Log.Info($"local API listening on http://127.0.0.1:{_s.ApiPort}");
+            Log.Info($"local API listening on http://127.0.0.1:{S.ApiPort}");
         }
         catch (Exception ex)
         {
-            Log.Error($"local API could not bind port {_s.ApiPort}", ex);
+            Log.Error($"local API could not bind port {S.ApiPort}", ex);
         }
     }
 
@@ -174,7 +173,7 @@ public sealed class IntegrationServer : IModule
         if (!Uri.TryCreate(origin, UriKind.Absolute, out var u)) return false;
         if (u.IsLoopback) return true; // local dev servers
         var norm = origin.TrimEnd('/');
-        return _s.AllowedOrigins.Any(o => string.Equals(o.TrimEnd('/'), norm, StringComparison.OrdinalIgnoreCase));
+        return S.AllowedOrigins.Any(o => string.Equals(o.TrimEnd('/'), norm, StringComparison.OrdinalIgnoreCase));
     }
 
     async Task<Response> RouteAsync(Request req, bool fromBrowser)
@@ -252,10 +251,12 @@ public sealed class IntegrationServer : IModule
         bool isNew = a == null;
         if (a == null)
         {
-            if (_hub.Items.Count(x => x.Kind == ActivityKind.Custom) >= MaxExternal) return null;
+            if (_hub.All.Count(x => x.Kind == ActivityKind.Custom) >= MaxExternal) return null;
             a = new Activity(id, ActivityKind.Custom);
         }
 
+        a.AppKey = "api:" + Slug(app);
+        AppRegistry.Seen(a.AppKey, app, "api");
         a.Source = app;
         a.Title = dto.Title!;
         a.Subtitle = dto.Subtitle;
@@ -296,8 +297,11 @@ public sealed class IntegrationServer : IModule
 
     void Notify(NotifyDto dto, ImageSource? image, bool fromBrowser)
     {
+        var appKey = "api:" + Slug(dto.App!);
+        AppRegistry.Seen(appKey, dto.App!.Trim(), "api");
         var a = new Activity("ext-notify:" + Guid.NewGuid().ToString("N"), ActivityKind.Notification)
         {
+            AppKey = appKey,
             Source = dto.App!.Trim(),
             Title = dto.Title!,
             Subtitle = dto.Body,
@@ -333,7 +337,7 @@ public sealed class IntegrationServer : IModule
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             using var content = new StringContent(JsonSerializer.Serialize(new { app, id, action = label }), Encoding.UTF8, "application/json");
-            using var _ = await Http.Client.PostAsync(u, content, cts.Token).ConfigureAwait(false);
+            using var _ = await Http.Local.PostAsync(u, content, cts.Token).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
