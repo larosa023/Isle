@@ -23,16 +23,6 @@ namespace Isle;
 /// </summary>
 public partial class MainWindow : Window
 {
-    public static readonly DependencyProperty PillRadiusProperty = DependencyProperty.Register(
-        nameof(PillRadius), typeof(double), typeof(MainWindow),
-        new PropertyMetadata(15.0, (d, e) => ((MainWindow)d).Pill.CornerRadius = new CornerRadius(Math.Max(0, (double)e.NewValue))));
-
-    public double PillRadius
-    {
-        get => (double)GetValue(PillRadiusProperty);
-        set => SetValue(PillRadiusProperty, value);
-    }
-
     const double SidePad = 24;
     const int HotkeyId = 0x1515, HideHotkeyId = 0x1516;
 
@@ -42,7 +32,8 @@ public partial class MainWindow : Window
     IntPtr _hwnd;
     Activity? _bound;
     bool _hover, _sticky, _menuOpen, _peeking, _expanded, _fullscreenHidden, _userHidden, _hotkeyRegistered, _hideHotkeyRegistered;
-    (double w, double h, double r, double o) _target = (-1, -1, -1, -1);
+    (double w, double h, double o) _target = (-1, -1, -1);
+    const double RadiusCap = 32; // big cards get soft corners, small states stay full pills
 
     public event Action<bool>? UserHiddenChanged;
     public bool IsUserHidden => _userHidden;
@@ -53,7 +44,7 @@ public partial class MainWindow : Window
         _hub = hub;
         _s = settings;
 
-        _hoverTimer = Timer(120, t => { t.Stop(); if (_hover) Expand(); });
+        _hoverTimer = Timer(200, t => { t.Stop(); if (_hover) Expand(); });
         _leaveTimer = Timer(380, t => { t.Stop(); if (!_hover && !Holding) Collapse(); });
         _peekTimer = Timer(3500, t =>
         {
@@ -151,8 +142,24 @@ public partial class MainWindow : Window
 
         RegisterHotkey();
         Position();
-        _target = (-1, -1, -1, -1);
+        _target = (-1, -1, -1);
         Refresh();
+    }
+
+    /// <summary>
+    /// Corner radius tracks the pill's live size every frame (so it's always a proper pill shape,
+    /// never wider corners than the height allows), and content is clipped to the same rounded shape.
+    /// </summary>
+    void Pill_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        double w = Pill.ActualWidth, h = Pill.ActualHeight;
+        double r = Math.Min(h / 2, RadiusCap) * Roundness;
+        Pill.CornerRadius = new CornerRadius(r);
+        double bt = Pill.BorderThickness.Left;
+        double iw = Math.Max(0, w - bt * 2), ih = Math.Max(0, h - bt * 2), ir = Math.Max(0, r - bt);
+        var clip = new RectangleGeometry(new Rect(0, 0, iw, ih), ir, ir);
+        clip.Freeze();
+        PillContent.Clip = clip;
     }
 
     static Visibility Vis(bool show) => show ? Visibility.Visible : Visibility.Collapsed;
@@ -230,6 +237,21 @@ public partial class MainWindow : Window
         bool ok = Native.RegisterHotKey(_hwnd, id, mods | Native.MOD_NOREPEAT, vk);
         if (!ok) Log.Info($"hotkey {text} is taken by another app");
         return ok;
+    }
+
+    public void SuspendHotkeys(bool suspend)
+    {
+        if (_hwnd == IntPtr.Zero) return;
+        if (suspend)
+        {
+            if (_hotkeyRegistered) Native.UnregisterHotKey(_hwnd, HotkeyId);
+            if (_hideHotkeyRegistered) Native.UnregisterHotKey(_hwnd, HideHotkeyId);
+            _hotkeyRegistered = _hideHotkeyRegistered = false;
+        }
+        else
+        {
+            RegisterHotkey();
+        }
     }
 
     /// <summary>Whether each shortcut is registered (false = empty, invalid, or taken by another app).</summary>
@@ -321,21 +343,20 @@ public partial class MainWindow : Window
         int count = _hub.Items.Count;
         PositionText.Text = count > 1 ? $"{_hub.CurrentIndex + 1} of {count}" : "";
 
-        double w, h, r, o = 1;
+        double w, h, o = 1;
         if (_expanded)
         {
             var layer = a == null ? IdleLayer : ExpandedLayer;
             if (a == null) UpdateClock();
             w = ExpandedW;
+            FixWidth(layer, w);
             h = MeasureLayer(layer, w);
-            r = Math.Min(32, h / 2) * Roundness;
             ShowOnly(layer, delayIn: true);
         }
         else if (a == null)
         {
             w = IdleW;
             h = IdleH;
-            r = h / 2 * Roundness;
             o = _s.HideWhenIdle ? 0 : 1;
             if (_s.IdleShowClock && !_s.HideWhenIdle)
             {
@@ -349,13 +370,36 @@ public partial class MainWindow : Window
         }
         else
         {
-            w = CompactW;
+            w = _s.CompactAutoWidth ? FitCompactWidth() : CompactW;
             h = CompactH;
-            r = h / 2 * Roundness;
+            FixWidth(CompactLayer, w);
             ShowOnly(CompactLayer, delayIn: false);
         }
 
-        AnimateTo(w, h, r, o);
+        AnimateTo(w, h, o);
+    }
+
+    /// <summary>
+    /// Layers get the final width up front, so text and buttons don't reflow while the pill grows —
+    /// the pill just reveals them (and clips them) as it opens.
+    /// </summary>
+    static void FixWidth(FrameworkElement layer, double pillWidth)
+    {
+        var m = layer.Margin;
+        layer.Width = Math.Max(0, pillWidth - 2 - m.Left - m.Right);
+    }
+
+    /// <summary>Compact pill sized to its content, between a sensible minimum and the configured width.</summary>
+    double FitCompactWidth()
+    {
+        double max = CompactW;
+        double min = Math.Min(max, 170);
+        CompactLayer.Width = double.NaN;
+        CompactLayer.Measure(new Size(double.PositiveInfinity, CompactH));
+        double want = Math.Ceiling(CompactLayer.DesiredSize.Width) + 2;
+        // Round up to 8 px so small text changes don't nudge the width.
+        want = Math.Ceiling(want / 8) * 8;
+        return Math.Clamp(want, min, max);
     }
 
     void Bind(Activity? a)
@@ -364,15 +408,34 @@ public partial class MainWindow : Window
         if (_bound != null) _bound.PropertyChanged -= OnActivityChanged;
         _bound = a;
         if (a != null) a.PropertyChanged += OnActivityChanged;
+        bool swap = CompactLayer.DataContext != null && a != null;
         CompactLayer.DataContext = a;
         ExpandedLayer.DataContext = a;
+        if (swap) CardSwapFade(_expanded ? ExpandedLayer : CompactLayer);
         // Bindings and item containers settle during layout; re-measure once they have.
-        if (_expanded) Dispatcher.InvokeAsync(Refresh, DispatcherPriority.Loaded);
+        Dispatcher.InvokeAsync(Refresh, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>A quick dip-and-return when the island switches to a different card.</summary>
+    void CardSwapFade(FrameworkElement layer)
+    {
+        if (layer.Tag as string != "on" || _s.ReduceMotion) return;
+        var ms = 220 / Speed;
+        var fade = new DoubleAnimation(0.15, 1, TimeSpan.FromMilliseconds(ms)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+        var tt = new TranslateTransform(0, 4);
+        layer.RenderTransform = tt;
+        layer.BeginAnimation(OpacityProperty, fade);
+        tt.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(4, 0, TimeSpan.FromMilliseconds(ms)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
     }
 
     void OnActivityChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (!_expanded) return;
+        if (!_expanded)
+        {
+            if (_s.CompactAutoWidth && e.PropertyName is nameof(Activity.Title) or nameof(Activity.HasTrailing) or nameof(Activity.ShowVisualizer) or nameof(Activity.IsLive))
+                Dispatcher.InvokeAsync(Refresh, DispatcherPriority.Loaded);
+            return;
+        }
         switch (e.PropertyName)
         {
             case nameof(Activity.HasActions):
@@ -410,9 +473,11 @@ public partial class MainWindow : Window
             el.Tag = "on";
             el.Visibility = Visibility.Visible;
             el.IsHitTestVisible = true;
-            el.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(200 * k))
+            el.RenderTransform = Transform.Identity;
+            el.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(220 * k))
             {
-                BeginTime = TimeSpan.FromMilliseconds((delayIn ? 110 : 40) * k),
+                BeginTime = TimeSpan.FromMilliseconds((delayIn ? 120 : 60) * k),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
             });
         }
         else
@@ -420,28 +485,28 @@ public partial class MainWindow : Window
             if (state != "on") return;
             el.Tag = "off";
             el.IsHitTestVisible = false;
-            var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(110 * k));
+            var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(90 * k));
             fade.Completed += (_, _) => { if (el.Tag as string == "off") el.Visibility = Visibility.Hidden; };
             el.BeginAnimation(OpacityProperty, fade);
         }
     }
 
-    void AnimateTo(double w, double h, double r, double o)
+    void AnimateTo(double w, double h, double o)
     {
-        if (_target == (w, h, r, o)) return;
+        if (_target == (w, h, o)) return;
         bool growing = w * h > Math.Max(0, _target.w) * Math.Max(0, _target.h);
-        _target = (w, h, r, o);
+        _target = (w, h, o);
 
-        double baseMs = _s.ReduceMotion ? 150 : growing ? 520 : 360;
+        double baseMs = _s.ReduceMotion ? 160 : growing ? 560 : 420;
         var duration = TimeSpan.FromMilliseconds(baseMs / Speed);
-        double spring = Math.Clamp(_s.Springiness, 0, 1);
-        IEasingFunction ease = growing && !_s.ReduceMotion && spring > 0.01
-            ? new BackEase { Amplitude = spring, EasingMode = EasingMode.EaseOut }
-            : new CubicEase { EasingMode = EasingMode.EaseOut };
+        double bounce = Math.Clamp(_s.Springiness, 0, 0.7);
+        IEasingFunction ease = _s.ReduceMotion
+            ? new CubicEase { EasingMode = EasingMode.EaseOut }
+            // Opening gets the full spring; closing settles a little more firmly.
+            : new SpringEase { Damping = growing ? 1 - bounce : Math.Min(1, 1.15 - bounce) };
 
         Pill.BeginAnimation(WidthProperty, new DoubleAnimation(w, duration) { EasingFunction = ease });
         Pill.BeginAnimation(HeightProperty, new DoubleAnimation(h, duration) { EasingFunction = ease });
-        BeginAnimation(PillRadiusProperty, new DoubleAnimation(r, duration) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
         Pill.BeginAnimation(OpacityProperty, new DoubleAnimation(o, TimeSpan.FromMilliseconds(220 / Speed)));
     }
 
@@ -545,54 +610,8 @@ public partial class MainWindow : Window
 
     void Pill_RightClick(object sender, MouseButtonEventArgs e)
     {
-        var app = App.Instance;
-        var menu = new ContextMenu();
-
-        var timers = new MenuItem { Header = "New timer" };
-        foreach (var minutes in new[] { 1, 5, 10, 15, 25, 45, 60 })
-        {
-            var m = minutes;
-            timers.Items.Add(Item($"{m} min", () => app.Timers.Start(TimeSpan.FromMinutes(m))));
-        }
-        menu.Items.Add(timers);
-
-        if (_hub.Current is { AppKey: string key } current)
-        {
-            var name = AppRegistry.Get(key)?.Name ?? current.Source ?? "this app";
-            menu.Items.Add(Item($"Hide {name}", () => HideApp(key, name)));
-        }
-
-        var dnd = new MenuItem { Header = "Do not disturb", IsCheckable = true, IsChecked = _s.DoNotDisturb };
-        dnd.Click += (_, _) =>
-        {
-            var s = app.Settings.Clone();
-            s.DoNotDisturb = !s.DoNotDisturb;
-            app.ApplySettings(s);
-        };
-        menu.Items.Add(dnd);
-        menu.Items.Add(new Separator());
-        menu.Items.Add(Item("Settings…", app.ShowSettings));
-        menu.Items.Add(Item("Check for updates", () => _ = app.Updates.CheckAsync(manual: true)));
-        menu.Items.Add(Item("Hide for 1 hour", () => SetUserHidden(true, TimeSpan.FromHours(1))));
-        menu.Items.Add(new Separator());
-        menu.Items.Add(Item("Quit Isle", app.Quit));
-
-        OpenMenu(menu, Pill);
+        OpenMenu(App.Instance.BuildMenu(_hub.Current), Pill);
         e.Handled = true;
-    }
-
-    static void HideApp(string key, string name)
-    {
-        var rule = AppRegistry.Get(key) ?? AppRegistry.Seen(key, name, key.Split(':')[0]);
-        rule.Enabled = false;
-        AppRegistry.Update(rule);
-    }
-
-    static MenuItem Item(string header, Action action)
-    {
-        var mi = new MenuItem { Header = header };
-        mi.Click += (_, _) => action();
-        return mi;
     }
 
     void OpenMenu(ContextMenu menu, UIElement target)

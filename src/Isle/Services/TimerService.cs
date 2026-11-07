@@ -19,6 +19,7 @@ public sealed class TimerService
         public TimeSpan Remaining;
         public bool Running;
         public bool? ActionsForRunning;
+        public string Shown = "";
     }
 
     static readonly Color Orange = Color.FromRgb(0xFF, 0x9F, 0x0A);
@@ -94,6 +95,9 @@ public sealed class TimerService
         var remaining = t.Running ? t.EndsAt - DateTime.UtcNow : t.Remaining;
         if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
         var text = Fmt.Countdown(remaining);
+        var shown = text + t.Running + t.Duration.Ticks;
+        if (shown == t.Shown) return; // nothing visible changed; don't repaint
+        t.Shown = shown;
 
         a.Title = t.Label;
         a.Subtitle = t.Running ? "Ends at " + (DateTime.Now + remaining).ToString("h:mm tt") : "Paused";

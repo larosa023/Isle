@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Isle.Core;
@@ -26,6 +27,8 @@ public partial class SettingsWindow : Window
     readonly List<PageDef> _pages;
     PageDef? _current;
     TextBlock? _ampliteStatus;
+    readonly List<Action> _afterApply = new();
+    static string? _lastPage;
 
     static readonly Brush CardFill = Frozen(Color.FromArgb(0x14, 0x80, 0x80, 0x80));
     static readonly Brush CardStroke = Frozen(Color.FromArgb(0x26, 0x80, 0x80, 0x80));
@@ -42,6 +45,7 @@ public partial class SettingsWindow : Window
         {
             _apply.Stop();
             App.Instance.ApplySettings(_s.Clone());
+            foreach (var a in _afterApply) a();
         };
 
         _pages = new List<PageDef>
@@ -77,7 +81,7 @@ public partial class SettingsWindow : Window
             if (_apply.IsEnabled) { _apply.Stop(); App.Instance.ApplySettings(_s.Clone()); }
         };
 
-        Nav.SelectedIndex = Math.Max(0, _pages.FindIndex(p => string.Equals(p.Title, page, StringComparison.OrdinalIgnoreCase)));
+        Nav.SelectedIndex = Math.Max(0, _pages.FindIndex(p => string.Equals(p.Title, page ?? _lastPage, StringComparison.OrdinalIgnoreCase)));
     }
 
     FontFamily Icons => (FontFamily)FindResource("Icons");
@@ -96,7 +100,9 @@ public partial class SettingsWindow : Window
     void Show(PageDef p)
     {
         _current = p;
+        _lastPage = p.Title;
         _ampliteStatus = null;
+        _afterApply.Clear();
         Page.Children.Clear();
         Page.Children.Add(new TextBlock { Text = p.Title, FontSize = 28, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 14) });
         p.Build();
@@ -250,6 +256,111 @@ public partial class SettingsWindow : Window
         return box;
     }
 
+    /// <summary>A color text box with a live swatch; only valid colors are applied.</summary>
+    FrameworkElement ColorField(Func<string> get, Action<string> set)
+    {
+        var swatch = new Border { Width = 26, Height = 26, CornerRadius = new CornerRadius(13), BorderThickness = new Thickness(1), BorderBrush = CardStroke, Margin = new Thickness(0, 0, 10, 0) };
+        var box = new TextBox { Text = get(), Width = 120 };
+        void Paint()
+        {
+            bool ok = ThemeManager.TryParseColor(box.Text, out var col);
+            swatch.Background = ok ? Frozen(col) : Brushes.Transparent;
+            box.ToolTip = ok ? null : "Not a color yet — try #1C1C1E";
+        }
+        Paint();
+        box.TextChanged += (_, _) =>
+        {
+            Paint();
+            if (ThemeManager.TryParseColor(box.Text, out _)) { set(box.Text.Trim()); Changed(); }
+        };
+        var sp = new StackPanel { Orientation = Orientation.Horizontal };
+        sp.Children.Add(swatch);
+        sp.Children.Add(box);
+        return sp;
+    }
+
+    /// <summary>Click, press the keys, done. Shows whether the shortcut actually works.</summary>
+    FrameworkElement HotkeyRecorder(Func<string> get, Action<string> set, Func<bool> active)
+    {
+        var box = new TextBox { Width = 180, IsReadOnly = true, Cursor = Cursors.Hand, IsUndoEnabled = false, ToolTip = "Click, then press the keys" };
+        var status = new TextBlock { FontSize = 12, Opacity = 0.7, Margin = new Thickness(0, 4, 0, 0), HorizontalAlignment = HorizontalAlignment.Right };
+        bool recording = false;
+
+        string Shown() => string.IsNullOrWhiteSpace(get()) ? "Off" : get().Replace("+", " + ");
+        void UpdateStatus()
+        {
+            if (recording) return;
+            status.Text = string.IsNullOrWhiteSpace(get()) ? "" : active() ? "Working" : "Not available — another app is using it";
+        }
+        void Stop()
+        {
+            recording = false;
+            App.Instance.SuspendHotkeys(false);
+            box.Text = Shown();
+            UpdateStatus();
+        }
+
+        box.Text = Shown();
+        UpdateStatus();
+        _afterApply.Add(UpdateStatus);
+
+        box.GotKeyboardFocus += (_, _) =>
+        {
+            recording = true;
+            App.Instance.SuspendHotkeys(true);
+            box.Text = "Press the keys…";
+            status.Text = "Recording";
+        };
+        box.LostKeyboardFocus += (_, _) => { if (recording) Stop(); };
+        box.PreviewKeyDown += (_, e) =>
+        {
+            e.Handled = true;
+            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+            if (key == Key.Escape) { Keyboard.ClearFocus(); return; }
+            if (key is Key.Back or Key.Delete && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                set("");
+                Changed();
+                Keyboard.ClearFocus();
+                return;
+            }
+
+            var mods = Keyboard.Modifiers;
+            var parts = new List<string>();
+            if (mods.HasFlag(ModifierKeys.Control)) parts.Add("Ctrl");
+            if (mods.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
+            if (mods.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
+            if (mods.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
+
+            if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin)
+            {
+                box.Text = parts.Count > 0 ? string.Join(" + ", parts) + " + …" : "Press the keys…";
+                return;
+            }
+            if (parts.Count == 0)
+            {
+                box.Text = "Add Ctrl, Alt, Shift or Win";
+                return;
+            }
+
+            parts.Add(key is >= Key.D0 and <= Key.D9 ? ((int)(key - Key.D0)).ToString() : key.ToString());
+            var text = string.Join("+", parts);
+            if (!MainWindow.TryParseHotkey(text, out _, out _))
+            {
+                box.Text = "That key can't be used";
+                return;
+            }
+            set(text);
+            Changed();
+            Keyboard.ClearFocus();
+        };
+
+        var sp = new StackPanel();
+        sp.Children.Add(box);
+        sp.Children.Add(status);
+        return sp;
+    }
+
     static Button Btn(string label, Action click, string? glyph = null)
     {
         object content = label;
@@ -309,11 +420,9 @@ public partial class SettingsWindow : Window
         Toggle("Still alert me for calls and finished timers", null, () => _s.AlertUrgentWhenQuiet, v => _s.AlertUrgentWhenQuiet = v);
 
         Section("Keyboard");
-        var hotkey = Text(() => _s.Hotkey, v => _s.Hotkey = v.Trim(), 160, "Modifiers + key, e.g. Ctrl+Alt+I, Win+Shift+D. Leave empty to turn off.");
-        Card("Shortcut to open the island", "Modifier keys plus one key, like Ctrl+Alt+I or Win+Shift+Space. Leave empty for none.", hotkey);
-        var hideKey = Text(() => _s.HideHotkey, v => _s.HideHotkey = v.Trim(), 160, "Modifiers + key, e.g. Ctrl+Alt+H. Leave empty to turn off.");
-        Card("Shortcut to hide or show the island", "Press once to hide Isle completely, again to bring it back. Leave empty for none.", hideKey);
-        Page.Children.Add(Hint("If a shortcut doesn't work, another app is already using it — try a different key.", new Thickness(0, 4, 0, 0)));
+        Card("Open or close the island", null, HotkeyRecorder(() => _s.Hotkey, v => _s.Hotkey = v, () => App.Instance.HotkeysActive.open));
+        Card("Hide or show the island", "Hides Isle completely; press again to bring it back.", HotkeyRecorder(() => _s.HideHotkey, v => _s.HideHotkey = v, () => App.Instance.HotkeysActive.hide));
+        Page.Children.Add(Hint("Click a shortcut, then press the new keys. Backspace turns it off, Esc cancels.", new Thickness(0, 4, 0, 0)));
 
         Section("Try it", "Put sample cards on the island to see your settings in action.");
         Card("Preview", null, Row(
@@ -337,7 +446,8 @@ public partial class SettingsWindow : Window
         Section("Shape");
         SliderCard("Idle pill width", "When nothing is happening.", 40, 300, 2, () => _s.IdleWidth, v => _s.IdleWidth = v, Px);
         SliderCard("Idle pill height", null, 8, 48, 1, () => _s.IdleHeight, v => _s.IdleHeight = v, Px);
-        SliderCard("Compact width", "When something is live but you're not hovering.", 140, 560, 2, () => _s.CompactWidth, v => _s.CompactWidth = v, Px);
+        Toggle("Fit the compact pill to its content", "Short things like a timer get a shorter pill.", () => _s.CompactAutoWidth, v => _s.CompactAutoWidth = v);
+        SliderCard(_s.CompactAutoWidth ? "Compact width (maximum)" : "Compact width", "When something is live but you're not hovering.", 160, 560, 2, () => _s.CompactWidth, v => _s.CompactWidth = v, Px);
         SliderCard("Compact height", null, 24, 56, 1, () => _s.CompactHeight, v => _s.CompactHeight = v, Px);
         SliderCard("Expanded width", null, 320, 620, 2, () => _s.ExpandedWidth, v => _s.ExpandedWidth = v, Px);
         SliderCard("Corner roundness", "100% is a full pill.", 0, 1, 0.05, () => _s.Roundness, v => _s.Roundness = v, Pct);
@@ -373,12 +483,12 @@ public partial class SettingsWindow : Window
         if (_s.Theme == "custom")
         {
             var c = _s.CustomTheme;
-            Card("Background", "#RRGGBB or #AARRGGBB", Text(() => c.Background, v => c.Background = v.Trim(), 130), indent: 24);
-            Card("Text", null, Text(() => c.Foreground, v => c.Foreground = v.Trim(), 130), indent: 24);
-            Card("Secondary text", null, Text(() => c.Secondary, v => c.Secondary = v.Trim(), 130), indent: 24);
-            Card("Border", null, Text(() => c.Border, v => c.Border = v.Trim(), 130), indent: 24);
-            Card("Buttons", null, Text(() => c.Button, v => c.Button = v.Trim(), 130), indent: 24);
-            Card("Buttons on hover", null, Text(() => c.ButtonHover, v => c.ButtonHover = v.Trim(), 130), indent: 24);
+            Card("Background", "#RRGGBB, or #AARRGGBB for see-through", ColorField(() => c.Background, v => c.Background = v), indent: 24);
+            Card("Text", null, ColorField(() => c.Foreground, v => c.Foreground = v), indent: 24);
+            Card("Secondary text", null, ColorField(() => c.Secondary, v => c.Secondary = v), indent: 24);
+            Card("Border", null, ColorField(() => c.Border, v => c.Border = v), indent: 24);
+            Card("Buttons", null, ColorField(() => c.Button, v => c.Button = v), indent: 24);
+            Card("Buttons on hover", null, ColorField(() => c.ButtonHover, v => c.ButtonHover = v), indent: 24);
         }
 
         Section("Accent");
@@ -399,7 +509,7 @@ public partial class SettingsWindow : Window
                 sw.Click += (_, _) => { _s.Accent = hex; Changed(); Rebuild(); };
                 swatches.Children.Add(sw);
             }
-            Card("Accent color", "Pick one, or type any color.", Text(() => _s.Accent, v => _s.Accent = v.Trim(), 110), swatches, indent: 24);
+            Card("Accent color", "Pick one, or type any color.", ColorField(() => _s.Accent, v => _s.Accent = v), swatches, indent: 24);
         }
 
         Section("Look");

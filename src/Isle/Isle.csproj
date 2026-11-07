@@ -17,7 +17,7 @@
     <Copyright>© 2026 Anthony LaRosa</Copyright>
     <Description>A Dynamic Island for Windows.</Description>
     <!-- CI overrides this from the git tag (v1.2.3 -> 1.2.3). -->
-    <VersionPrefix>0.3.0</VersionPrefix>
+    <VersionPrefix>0.4.0</VersionPrefix>
 
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\isle.ico</ApplicationIcon>

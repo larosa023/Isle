@@ -7,6 +7,7 @@
         Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize" ShowActivated="False"
         Width="480" Height="230"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextOptions.TextRenderingMode="Grayscale" TextOptions.TextFormattingMode="Ideal"
         FontFamily="Segoe UI Variable Text, Segoe UI"
         Foreground="{DynamicResource Island.Foreground}">
 
@@ -50,16 +51,16 @@
     <Grid x:Name="Root">
         <Border x:Name="Pill"
                 HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,6,0,0"
-                Width="120" Height="30" CornerRadius="15" ClipToBounds="True"
+                Width="120" Height="30" CornerRadius="15"
                 Background="{DynamicResource Island.Background}"
                 BorderBrush="{DynamicResource Island.Border}" BorderThickness="1"
                 MouseEnter="Pill_MouseEnter" MouseLeave="Pill_MouseLeave"
                 MouseLeftButtonUp="Pill_Click" MouseRightButtonUp="Pill_RightClick"
-                MouseWheel="Pill_Wheel">
-            <Grid>
+                MouseWheel="Pill_Wheel" SizeChanged="Pill_SizeChanged">
+            <Grid x:Name="PillContent">
 
                 <!-- ───────────── Compact: leading art · title · trailing ───────────── -->
-                <Grid x:Name="CompactLayer" Margin="7,0,14,0" Opacity="0" Visibility="Hidden" IsHitTestVisible="False">
+                <Grid x:Name="CompactLayer" Margin="7,0,14,0" HorizontalAlignment="Center" Opacity="0" Visibility="Hidden" IsHitTestVisible="False">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
@@ -101,7 +102,7 @@
                         <StackPanel x:Name="CompactTrailingHost" Orientation="Horizontal" VerticalAlignment="Center">
                             <c:Visualizer BarBrush="{Binding AccentBrush}" BarHeight="13" IsActive="{Binding ShowVisualizer}"
                                           Visibility="{Binding ShowVisualizer, Converter={StaticResource BoolToVis}}"/>
-                            <TextBlock Text="{Binding Trailing}" FontSize="12.5" FontWeight="SemiBold"
+                            <TextBlock Text="{Binding Trailing}" FontSize="12.5" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular"
                                        Foreground="{Binding AccentBrush}"
                                        Visibility="{Binding HasTrailing, Converter={StaticResource BoolToVis}}"/>
                         </StackPanel>
@@ -113,7 +114,7 @@
                            FontSize="12.5" FontWeight="SemiBold" Opacity="0" Visibility="Hidden" IsHitTestVisible="False"/>
 
                 <!-- ───────────── Expanded activity ───────────── -->
-                <Grid x:Name="ExpandedLayer" Margin="18,16,18,15" VerticalAlignment="Top"
+                <Grid x:Name="ExpandedLayer" Margin="18,16,18,15" VerticalAlignment="Top" HorizontalAlignment="Center"
                       Opacity="0" Visibility="Hidden" IsHitTestVisible="False">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -159,7 +160,7 @@
                             <c:Visualizer BarBrush="{Binding AccentBrush}" BarHeight="20" IsActive="{Binding ShowVisualizer}"
                                           HorizontalAlignment="Right"
                                           Visibility="{Binding ShowVisualizer, Converter={StaticResource BoolToVis}}"/>
-                            <TextBlock Text="{Binding Badge}" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Right"
+                            <TextBlock Text="{Binding Badge}" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Right" Typography.NumeralAlignment="Tabular"
                                        Foreground="{Binding AccentBrush}"
                                        Visibility="{Binding HasBadge, Converter={StaticResource BoolToVis}}"/>
                         </StackPanel>
@@ -173,7 +174,7 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding ProgressLeft}" FontSize="11" Style="{StaticResource Secondary}"
+                        <TextBlock Text="{Binding ProgressLeft}" FontSize="11" Typography.NumeralAlignment="Tabular" Style="{StaticResource Secondary}"
                                    MinWidth="32" Margin="0,0,10,0" VerticalAlignment="Center"/>
                         <Border Grid.Column="1" Height="4" CornerRadius="2" VerticalAlignment="Center"
                                 Background="{DynamicResource Island.Track}">
@@ -183,7 +184,7 @@
                                 </Border.RenderTransform>
                             </Border>
                         </Border>
-                        <TextBlock Grid.Column="2" Text="{Binding ProgressRight}" FontSize="11" Style="{StaticResource Secondary}"
+                        <TextBlock Grid.Column="2" Text="{Binding ProgressRight}" FontSize="11" Typography.NumeralAlignment="Tabular" Style="{StaticResource Secondary}"
                                    MinWidth="32" TextAlignment="Right" Margin="10,0,0,0" VerticalAlignment="Center"/>
                     </Grid>
                     </Border>
@@ -222,7 +223,7 @@
                 </Grid>
 
                 <!-- ───────────── Expanded with nothing going on: clock + quick timers ───────────── -->
-                <Grid x:Name="IdleLayer" Margin="20,14,20,16" VerticalAlignment="Top"
+                <Grid x:Name="IdleLayer" Margin="20,14,20,16" VerticalAlignment="Top" HorizontalAlignment="Center"
                       Opacity="0" Visibility="Hidden" IsHitTestVisible="False">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -234,7 +235,7 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel>
-                            <TextBlock x:Name="IdleTime" FontSize="28" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="IdleTime" FontSize="28" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular"/>
                             <TextBlock x:Name="IdleDate" FontSize="12.5" Style="{StaticResource Secondary}"/>
                         </StackPanel>
                         <TextBlock Grid.Column="1" Text="Isle" FontSize="11" Style="{StaticResource Secondary}" VerticalAlignment="Top"/>

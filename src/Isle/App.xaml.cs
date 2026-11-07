@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using Isle.Controls;
 using Isle.Core;
@@ -53,6 +54,7 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += (_, ex) => { Log.Error("task", ex.Exception); ex.SetObserved(); };
 
         Log.Info($"Isle {AppInfo.VersionString} starting");
+        ThemeMode = ThemeMode.System; // Windows 11 (Fluent) menus and dialogs, following light/dark
         Settings = AppSettings.Load();
         AppSettings.Current = Settings;
         ThemeManager.Apply(Settings);
@@ -170,7 +172,7 @@ public partial class App : Application
                 break;
             case "notification":
             {
-                var n = new Activity("demo:notification", ActivityKind.Notification)
+                var n = new Activity("demo:notification", ActivityKind.Custom)
                 {
                     Source = "Isle",
                     Title = "This is a notification",
@@ -224,6 +226,70 @@ public partial class App : Application
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
         _settingsWindow.Activate();
+    }
+
+    public (bool open, bool hide) HotkeysActive => _island?.HotkeysActive ?? (false, false);
+
+    /// <summary>While Settings records a new shortcut, the current ones must not fire.</summary>
+    public void SuspendHotkeys(bool suspend) => _island?.SuspendHotkeys(suspend);
+
+    /// <summary>The menu shared by the tray icon and right-clicking the island.</summary>
+    public ContextMenu BuildMenu(Activity? current, bool includeHeader = false)
+    {
+        var menu = new ContextMenu();
+        if (includeHeader)
+        {
+            menu.Items.Add(new MenuItem { Header = $"Isle {AppInfo.VersionString}", IsEnabled = false });
+            menu.Items.Add(new Separator());
+        }
+
+        var timers = new MenuItem { Header = "New timer" };
+        foreach (var minutes in new[] { 1, 3, 5, 10, 15, 25, 45, 60 })
+        {
+            var m = minutes;
+            timers.Items.Add(Item(m == 60 ? "1 hour" : $"{m} min", () => Timers.Start(TimeSpan.FromMinutes(m))));
+        }
+        menu.Items.Add(timers);
+
+        if (current is { AppKey: string key })
+        {
+            var name = AppRegistry.Get(key)?.Name ?? current.Source ?? "this app";
+            menu.Items.Add(Item($"Don't show {name}", () =>
+            {
+                var rule = AppRegistry.Get(key) ?? AppRegistry.Seen(key, name, key.Split(':')[0]);
+                rule.Enabled = false;
+                AppRegistry.Update(rule);
+            }));
+        }
+
+        var dnd = new MenuItem { Header = "Do not disturb", IsCheckable = true, IsChecked = Settings.DoNotDisturb };
+        dnd.Click += (_, _) =>
+        {
+            var s = Settings.Clone();
+            s.DoNotDisturb = !s.DoNotDisturb;
+            ApplySettings(s);
+        };
+        menu.Items.Add(dnd);
+
+        bool hidden = _island?.IsUserHidden == true;
+        menu.Items.Add(Item(hidden ? "Show the island" : "Hide the island", ToggleIslandHidden, Shortcut(Settings.HideHotkey)));
+        if (!hidden) menu.Items.Add(Item("Hide for 1 hour", () => _island?.SetUserHidden(true, TimeSpan.FromHours(1))));
+
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Item("Settings…", ShowSettings));
+        menu.Items.Add(Item("Check for updates", () => _ = Updates.CheckAsync(manual: true)));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Item("Quit Isle", Quit));
+        return menu;
+
+        static MenuItem Item(string header, Action action, string? gesture = null)
+        {
+            var mi = new MenuItem { Header = header, InputGestureText = gesture ?? "" };
+            mi.Click += (_, _) => action();
+            return mi;
+        }
+
+        static string? Shortcut(string? hotkey) => string.IsNullOrWhiteSpace(hotkey) ? null : hotkey;
     }
 
     public void ToggleIslandHidden()

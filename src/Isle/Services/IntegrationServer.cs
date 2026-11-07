@@ -349,7 +349,8 @@ public sealed class IntegrationServer : IModule
     {
         var appKey = "api:" + Slug(dto.App!);
         AppRegistry.Seen(appKey, dto.App!.Trim(), "api");
-        var a = new Activity("ext-notify:" + Guid.NewGuid().ToString("N"), ActivityKind.Notification)
+        // Filed under "From your apps" (not Windows notifications, which are off by default).
+        var a = new Activity("ext-notify:" + Guid.NewGuid().ToString("N"), ActivityKind.Custom)
         {
             AppKey = appKey,
             Source = dto.App!.Trim(),

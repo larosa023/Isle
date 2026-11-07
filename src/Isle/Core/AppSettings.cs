@@ -47,7 +47,8 @@ public sealed class AppSettings
     public double Scale { get; set; } = 1.0;
     public double IdleWidth { get; set; } = 120;
     public double IdleHeight { get; set; } = 30;
-    public double CompactWidth { get; set; } = 300;
+    public double CompactWidth { get; set; } = 300;            // the maximum when CompactAutoWidth is on
+    public bool CompactAutoWidth { get; set; } = true;
     public double CompactHeight { get; set; } = 36;
     public double ExpandedWidth { get; set; } = 420;
     public double Roundness { get; set; } = 1.0;               // 0 = square-ish, 1 = full pill
@@ -68,7 +69,7 @@ public sealed class AppSettings
 
     // ── Behavior & motion ──
     public bool HoverToExpand { get; set; } = true;
-    public int HoverDelayMs { get; set; } = 120;
+    public int HoverDelayMs { get; set; } = 200;
     public int CollapseDelayMs { get; set; } = 380;
     public bool ClickOpensActivity { get; set; } = true;
     public bool ScrollToSwitch { get; set; } = true;
@@ -132,6 +133,18 @@ public sealed class AppSettings
     public bool AutoCheckUpdates { get; set; } = true;
     public string SkippedVersion { get; set; } = "";
 
+    /// <summary>Bumped when a default changes in a way existing settings files should pick up.</summary>
+    public int SettingsVersion { get; set; }
+
+    void Migrate()
+    {
+        if (SettingsVersion < 2)
+        {
+            if (HoverDelayMs == 120) HoverDelayMs = 200; // 0.4: a hair longer so passing over it doesn't open it
+            SettingsVersion = 2;
+        }
+    }
+
     public KindRule Kind(ActivityKind kind) => Kind(KindKey(kind));
 
     public KindRule Kind(string key)
@@ -176,13 +189,18 @@ public sealed class AppSettings
         try
         {
             if (File.Exists(Paths.SettingsFile))
-                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(Paths.SettingsFile), Options) ?? new AppSettings();
+            {
+                var loaded = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(Paths.SettingsFile), Options) ?? new AppSettings();
+                loaded.Migrate();
+                return loaded;
+            }
         }
         catch (Exception ex)
         {
             Log.Error("settings load", ex);
         }
         var s = new AppSettings();
+        s.Migrate();
         s.Save();
         return s;
     }

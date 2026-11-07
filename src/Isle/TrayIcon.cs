@@ -1,57 +1,71 @@
 using System;
+using System.Windows;
+using System.Windows.Controls.Primitives;
+using System.Windows.Media;
 using Isle.Core;
 using Drawing = System.Drawing;
 using Forms = System.Windows.Forms;
 
 namespace Isle;
 
-/// <summary>Notification-area icon: timers, hide/show, settings, updates, quit.</summary>
+/// <summary>
+/// Notification-area icon. Left-click opens Settings; right-click shows the same Windows 11-style
+/// menu as right-clicking the island.
+/// </summary>
 public sealed class TrayIcon : IDisposable
 {
     readonly Forms.NotifyIcon _icon;
-    readonly Forms.ToolStripMenuItem _toggle;
+    readonly App _app;
 
     public TrayIcon(App app)
     {
-        var menu = new Forms.ContextMenuStrip();
-        menu.Items.Add(new Forms.ToolStripMenuItem($"Isle {AppInfo.VersionString}") { Enabled = false });
-        menu.Items.Add(new Forms.ToolStripSeparator());
-
-        var timers = new Forms.ToolStripMenuItem("New timer");
-        foreach (var minutes in new[] { 1, 5, 10, 15, 25, 45, 60 })
-        {
-            var m = minutes;
-            timers.DropDownItems.Add($"{m} min", null, (_, _) => app.Timers.Start(TimeSpan.FromMinutes(m)));
-        }
-        menu.Items.Add(timers);
-
-        _toggle = new Forms.ToolStripMenuItem("Hide island", null, (_, _) => app.ToggleIslandHidden());
-        menu.Items.Add(_toggle);
-        menu.Items.Add("Settings…", null, (_, _) => app.ShowSettings());
-        menu.Items.Add("Check for updates", null, (_, _) => _ = app.Updates.CheckAsync(manual: true));
-        menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add("Quit Isle", null, (_, _) => app.Quit());
-
+        _app = app;
         _icon = new Forms.NotifyIcon
         {
             Text = "Isle",
             Icon = LoadIcon(),
-            ContextMenuStrip = menu,
             Visible = true,
         };
-        _icon.MouseClick += (_, e) =>
+        _icon.MouseUp += (_, e) =>
         {
-            if (e.Button == Forms.MouseButtons.Left) app.ShowSettings();
+            if (e.Button == Forms.MouseButtons.Right) ShowMenu();
+            else if (e.Button == Forms.MouseButtons.Left) _app.ShowSettings();
         };
     }
 
-    public void SetHidden(bool hidden) => _toggle.Text = hidden ? "Show island" : "Hide island";
+    public void SetHidden(bool hidden) => _icon.Text = hidden ? "Isle (hidden)" : "Isle";
+
+    void ShowMenu()
+    {
+        // A WPF menu needs an active window to close properly when you click elsewhere;
+        // a tiny invisible one does the job.
+        var host = new Window
+        {
+            WindowStyle = WindowStyle.None,
+            AllowsTransparency = true,
+            Background = Brushes.Transparent,
+            ShowInTaskbar = false,
+            ShowActivated = true,
+            Topmost = true,
+            Width = 1,
+            Height = 1,
+            Left = -32000,
+            Top = -32000,
+        };
+        host.Show();
+        host.Activate();
+
+        var menu = _app.BuildMenu(null, includeHeader: true);
+        menu.Placement = PlacementMode.MousePoint;
+        menu.Closed += (_, _) => host.Close();
+        menu.IsOpen = true;
+    }
 
     static Drawing.Icon LoadIcon()
     {
         try
         {
-            var info = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/isle.ico"));
+            var info = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/isle.ico"));
             if (info != null)
             {
                 using var stream = info.Stream;
