@@ -69,6 +69,27 @@ public sealed class IntegrationServer : IModule
         public double? Seconds { get; set; }
     }
 
+    public sealed class FullcourtFavoriteDto
+    {
+        public string? Id { get; set; }
+        public string? Abbr { get; set; }
+        public string? Name { get; set; }
+    }
+
+    public sealed class FullcourtSyncDto
+    {
+        public string? League { get; set; }
+        public FullcourtFavoriteDto? Favorite { get; set; }
+        public string? Origin { get; set; }
+    }
+
+    public sealed class FullcourtTrackDto
+    {
+        public string? League { get; set; }
+        public string? Game { get; set; }
+        public bool? On { get; set; }
+    }
+
     public sealed class TimerDto
     {
         public double? Seconds { get; set; }
@@ -173,6 +194,7 @@ public sealed class IntegrationServer : IModule
         if (!Uri.TryCreate(origin, UriKind.Absolute, out var u)) return false;
         if (u.IsLoopback) return true; // local dev servers
         var norm = origin.TrimEnd('/');
+        if (FullcourtLink.Origins.Any(o => string.Equals(o, norm, StringComparison.OrdinalIgnoreCase))) return true;
         return S.AllowedOrigins.Any(o => string.Equals(o.TrimEnd('/'), norm, StringComparison.OrdinalIgnoreCase));
     }
 
@@ -226,6 +248,34 @@ public sealed class IntegrationServer : IModule
             var image = await LoadImageAsync(dto.Image, fromBrowser).ConfigureAwait(false);
             await Ui.InvokeAsync(() => Notify(dto, image, fromBrowser)).ConfigureAwait(false);
             return new Response(200, new { ok = true });
+        }
+
+        // Fullcourt (site or Windows app) tells Isle your favorite team and which games to track.
+        if (method == "POST" && path == "/v1/fullcourt/sync")
+        {
+            var dto = JsonSerializer.Deserialize<FullcourtSyncDto>(req.Body, Json);
+            if (dto?.League == null) return new Response(400, new { error = "league is required" });
+            await Ui.InvokeAsync(() =>
+            {
+                AppRegistry.Seen("api:fullcourt", "Fullcourt", "api");
+                FullcourtLink.SyncFavorite(dto.League, dto.Favorite?.Abbr, dto.Favorite?.Name, dto.Origin ?? req.Origin ?? "app");
+            }).ConfigureAwait(false);
+            return new Response(200, new { ok = true, isle = AppInfo.VersionString, following = AppSettings.Current.SportsUseFullcourt });
+        }
+
+        if (method == "POST" && path == "/v1/fullcourt/track")
+        {
+            var dto = JsonSerializer.Deserialize<FullcourtTrackDto>(req.Body, Json);
+            if (dto?.League == null || string.IsNullOrWhiteSpace(dto.Game)) return new Response(400, new { error = "league and game are required" });
+            bool on = dto.On != false;
+            await Ui.InvokeAsync(() => FullcourtLink.Track(dto.League, dto.Game!, on)).ConfigureAwait(false);
+            return new Response(200, new { ok = true, tracking = on, sportsOn = AppSettings.Current.Kind("sports").Enabled && AppSettings.Current.SportsUseFullcourt });
+        }
+
+        if (method == "GET" && path == "/v1/fullcourt/track")
+        {
+            var list = await Ui.InvokeAsync(() => FullcourtLink.Tracked.Select(t => new { league = t.League, game = t.Game }).ToList()).ConfigureAwait(false);
+            return new Response(200, list);
         }
 
         if (method == "POST" && path == "/v1/timers")

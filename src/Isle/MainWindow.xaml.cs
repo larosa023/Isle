@@ -34,14 +34,14 @@ public partial class MainWindow : Window
     }
 
     const double SidePad = 24;
-    const int HotkeyId = 0x1515;
+    const int HotkeyId = 0x1515, HideHotkeyId = 0x1516;
 
     readonly ActivityHub _hub;
     readonly DispatcherTimer _hoverTimer, _leaveTimer, _peekTimer, _guardTimer, _hideTimer;
     AppSettings _s;
     IntPtr _hwnd;
     Activity? _bound;
-    bool _hover, _sticky, _menuOpen, _peeking, _expanded, _fullscreenHidden, _userHidden, _hotkeyRegistered;
+    bool _hover, _sticky, _menuOpen, _peeking, _expanded, _fullscreenHidden, _userHidden, _hotkeyRegistered, _hideHotkeyRegistered;
     (double w, double h, double r, double o) _target = (-1, -1, -1, -1);
 
     public event Action<bool>? UserHiddenChanged;
@@ -86,6 +86,7 @@ public partial class MainWindow : Window
         {
             SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
             if (_hotkeyRegistered) Native.UnregisterHotKey(_hwnd, HotkeyId);
+            if (_hideHotkeyRegistered) Native.UnregisterHotKey(_hwnd, HideHotkeyId);
         };
     }
 
@@ -218,17 +219,21 @@ public partial class MainWindow : Window
     void RegisterHotkey()
     {
         if (_hwnd == IntPtr.Zero) return;
-        if (_hotkeyRegistered)
-        {
-            Native.UnregisterHotKey(_hwnd, HotkeyId);
-            _hotkeyRegistered = false;
-        }
-        if (!TryParseHotkey(_s.Hotkey, out var mods, out var vk)) return;
-        _hotkeyRegistered = Native.RegisterHotKey(_hwnd, HotkeyId, mods | Native.MOD_NOREPEAT, vk);
-        if (!_hotkeyRegistered) Log.Info($"hotkey {_s.Hotkey} is taken by another app");
+        _hotkeyRegistered = Register(HotkeyId, _s.Hotkey, _hotkeyRegistered);
+        _hideHotkeyRegistered = Register(HideHotkeyId, _s.HideHotkey, _hideHotkeyRegistered);
     }
 
-    public bool HotkeyActive => _hotkeyRegistered;
+    bool Register(int id, string? text, bool wasRegistered)
+    {
+        if (wasRegistered) Native.UnregisterHotKey(_hwnd, id);
+        if (!TryParseHotkey(text, out var mods, out var vk)) return false;
+        bool ok = Native.RegisterHotKey(_hwnd, id, mods | Native.MOD_NOREPEAT, vk);
+        if (!ok) Log.Info($"hotkey {text} is taken by another app");
+        return ok;
+    }
+
+    /// <summary>Whether each shortcut is registered (false = empty, invalid, or taken by another app).</summary>
+    public (bool open, bool hide) HotkeysActive => (_hotkeyRegistered, _hideHotkeyRegistered);
 
     public static bool TryParseHotkey(string? text, out uint mods, out uint vk)
     {
@@ -256,7 +261,12 @@ public partial class MainWindow : Window
 
     IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (msg == Native.WM_HOTKEY && wParam.ToInt32() == HotkeyId)
+        if (msg == Native.WM_HOTKEY && wParam.ToInt32() == HideHotkeyId)
+        {
+            handled = true;
+            SetUserHidden(!_userHidden);
+        }
+        else if (msg == Native.WM_HOTKEY && wParam.ToInt32() == HotkeyId)
         {
             handled = true;
             if (_userHidden) SetUserHidden(false);

@@ -79,6 +79,7 @@ public sealed class AppSettings
     public double Springiness { get; set; } = 0.22;
     public bool ReduceMotion { get; set; }
     public string Hotkey { get; set; } = "Ctrl+Alt+I";
+    public string HideHotkey { get; set; } = "Ctrl+Alt+H";
     public bool StartWithWindows { get; set; }
 
     // Do not disturb
@@ -117,7 +118,10 @@ public sealed class AppSettings
     public List<string> FavoriteTeams { get; set; } = new();
     public bool SportsShowAllLive { get; set; }
     public bool SportsPeekOnScore { get; set; } = true;
-    public string SportsOpenUrl { get; set; } = "";
+    public string SportsOpenUrl { get; set; } = "";            // used when SportsOpenIn = "custom"
+    public string SportsOpenIn { get; set; } = "auto";         // auto | app | site | espn | custom
+    public bool SportsUseFullcourt { get; set; } = true;       // follow favorites and tracked games from Fullcourt
+    public string FullcourtSiteUrl { get; set; } = "https://larosa023.github.io/fullcourt/";
 
     // Local API
     public bool ApiEnabled { get; set; } = true;

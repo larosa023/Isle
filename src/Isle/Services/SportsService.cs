@@ -37,7 +37,7 @@ public sealed class SportsService : IModule
     sealed record Game(
         string Id, string League, string Sport, string State, string Detail,
         string Away, string Home, string AwayScore, string HomeScore,
-        Color? Accent, string? Link, DateTime StartUtc);
+        Color? Accent, string? Link, DateTime StartUtc, bool Tracked);
 
     sealed class Seen
     {
@@ -56,7 +56,26 @@ public sealed class SportsService : IModule
         _hub = hub;
             }
 
-    public void Start() => _ = LoopAsync(_cts.Token);
+    TaskCompletionSource _wake = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    readonly Dictionary<string, string> _actionKeys = new();
+
+    public void Start()
+    {
+        FullcourtLink.Changed += Wake;
+        _ = LoopAsync(_cts.Token);
+    }
+
+    /// <summary>Re-poll right away (Fullcourt synced a favorite or asked to track a game).</summary>
+    void Wake() => _wake.TrySetResult();
+
+    /// <summary>Your favorites from Settings plus, when enabled, the ones Fullcourt synced.</summary>
+    static List<Favorite> AllFavorites()
+    {
+        var list = ParseFavorites(S.FavoriteTeams);
+        if (S.SportsUseFullcourt)
+            list.AddRange(FullcourtLink.Favorites.Select(f => new Favorite(f.League, f.Abbr)));
+        return list;
+    }
 
     async Task LoopAsync(CancellationToken ct)
     {
@@ -68,15 +87,21 @@ public sealed class SportsService : IModule
             var next = TimeSpan.FromMinutes(5);
             try
             {
-                var favorites = ParseFavorites(S.FavoriteTeams);
-                if (favorites.Count == 0 && !S.SportsShowAllLive)
+                var favorites = AllFavorites();
+                var tracked = S.SportsUseFullcourt ? FullcourtLink.Tracked.ToList() : new List<FullcourtLink.TrackedGame>();
+                if (favorites.Count == 0 && tracked.Count == 0 && !S.SportsShowAllLive)
                 {
                     next = TimeSpan.FromMinutes(10);
+                    await Ui.InvokeAsync(() => Apply(new List<Game>())).ConfigureAwait(false);
                 }
                 else
                 {
                     var games = new List<Game>();
-                    foreach (var league in S.SportsLeagues.Select(l => l.Trim().ToLowerInvariant()).Distinct())
+                    var leagues = S.SportsLeagues.Select(l => l.Trim().ToLowerInvariant())
+                        .Concat(favorites.Where(f => f.League != null).Select(f => f.League!))
+                        .Concat(tracked.Select(t => t.League))
+                        .Distinct();
+                    foreach (var league in leagues)
                     {
                         if (!LeaguePaths.TryGetValue(league, out var path)) continue;
                         try { games.AddRange(await FetchAsync(league, path, favorites, ct).ConfigureAwait(false)); }
@@ -101,7 +126,12 @@ public sealed class SportsService : IModule
                 next = TimeSpan.FromMinutes(2);
             }
 
-            try { await Task.Delay(next, ct).ConfigureAwait(false); }
+            try
+            {
+                _wake = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                await Task.WhenAny(Task.Delay(next, ct), _wake.Task).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
+            }
             catch (OperationCanceledException) { return; }
         }
     }
@@ -123,8 +153,10 @@ public sealed class SportsService : IModule
 
     async Task<List<Game>> FetchAsync(string league, string path, List<Favorite> favorites, CancellationToken ct)
     {
+        // College scoreboards only list featured games unless asked for every Division I game.
+        var query = path.Contains("college") ? "?groups=50&limit=400" : "";
         var json = await Http.GetStringAsync(
-            $"https://site.api.espn.com/apis/site/v2/sports/{path}/scoreboard", TimeSpan.FromSeconds(15), ct).ConfigureAwait(false);
+            $"https://site.api.espn.com/apis/site/v2/sports/{path}/scoreboard{query}", TimeSpan.FromSeconds(15), ct).ConfigureAwait(false);
 
         var result = new List<Game>();
         using var doc = JsonDocument.Parse(json);
@@ -156,7 +188,8 @@ public sealed class SportsService : IModule
             var fav = favorites.FirstOrDefault(f =>
                 (f.League == null || f.League == league) &&
                 (f.Abbr.Equals(awayAbbr, StringComparison.OrdinalIgnoreCase) || f.Abbr.Equals(homeAbbr, StringComparison.OrdinalIgnoreCase)));
-            bool relevant = fav != null || (S.SportsShowAllLive && state == "in");
+            bool isTracked = S.SportsUseFullcourt && FullcourtLink.IsTracked(league, id);
+            bool relevant = fav != null || isTracked || (S.SportsShowAllLive && state == "in");
             if (!relevant) continue;
 
             var favSide = fav != null && fav.Abbr.Equals(awayAbbr, StringComparison.OrdinalIgnoreCase) ? away : home;
@@ -170,7 +203,7 @@ public sealed class SportsService : IModule
                 link = links.EnumerateArray().Select(l => Str(l, "href")).FirstOrDefault(h => h != null);
 
             result.Add(new Game(id, league, sport, state, detail, awayAbbr, homeAbbr,
-                Str(away, "score") ?? "0", Str(home, "score") ?? "0", accent, link, start));
+                Str(away, "score") ?? "0", Str(home, "score") ?? "0", accent, link, start, isTracked));
         }
         return result;
     }
@@ -205,7 +238,7 @@ public sealed class SportsService : IModule
             }
             else if (g.State == "post")
             {
-                if (!seen.WasLive || seen.FinalShown) continue; // only celebrate games we watched live
+                if (seen.FinalShown || !(seen.WasLive || g.Tracked)) continue; // only finals we watched or tracked
                 seen.FinalShown = true;
                 keep.Add(id);
                 var a = _hub.GetOrAdd(id, ActivityKind.Sports, x => Init(x, g));
@@ -218,16 +251,23 @@ public sealed class SportsService : IModule
                 _hub.Reorder();
                 _hub.Peek(a);
             }
-            else if (g.State == "pre" && g.StartUtc - now < TimeSpan.FromMinutes(15) && g.StartUtc - now > TimeSpan.FromMinutes(-30))
+            else if (g.State == "pre" && (g.Tracked || (g.StartUtc - now < TimeSpan.FromMinutes(15) && g.StartUtc - now > TimeSpan.FromMinutes(-30))))
             {
                 keep.Add(id);
                 var a = _hub.GetOrAdd(id, ActivityKind.Sports, x => Init(x, g));
+                bool soon = g.StartUtc - now < TimeSpan.FromMinutes(15);
                 a.Title = $"{g.Away} @ {g.Home}";
-                a.Subtitle = "Starting soon · " + g.Detail;
+                a.Subtitle = (soon ? "Starting soon · " : g.Tracked ? "Tracking · " : "") + g.Detail;
                 a.Trailing = g.StartUtc.ToLocalTime().ToString("h:mm");
                 a.Priority = 10;
             }
+
+            if (_hub.Get(id) is Activity card) Decorate(card, g);
         }
+
+        // Tracked games that are over (and showed their final) can go.
+        var finals = games.Where(g => g.State == "post").Select(g => (g.League, g.Id)).ToHashSet();
+        FullcourtLink.PruneTracked(t => finals.Contains((t.League, t.Game)));
 
         // Drop live/pre-game cards that no longer apply; finals expire on their own.
         _hub.RemoveWhere(a => a.Kind == ActivityKind.Sports && !keep.Contains(a.Id) && a.ExpiresAt == null);
@@ -238,14 +278,30 @@ public sealed class SportsService : IModule
     void Init(Activity a, Game g)
     {
         a.Glyph = Glyphs.Sports;
-        a.Source = g.League.ToUpperInvariant();
         a.Accent = g.Accent;
-        var url = string.IsNullOrWhiteSpace(S.SportsOpenUrl) ? g.Link : S.SportsOpenUrl;
-        if (!string.IsNullOrWhiteSpace(url))
+    }
+
+    /// <summary>Source line, click target and buttons — refreshed every poll, buttons only when they change.</summary>
+    void Decorate(Activity a, Game g)
+    {
+        a.Source = g.League.ToUpperInvariant() + (g.Tracked ? " · tracking from Fullcourt" : "");
+        var open = FullcourtLink.OpenerFor(g.League, g.Id, g.Link);
+        a.OnOpen = open;
+
+        var label = FullcourtLink.OpenLabel(g.League);
+        var key = $"{label}|{g.Tracked}|{open != null}|{g.Link != null}";
+        if (_actionKeys.TryGetValue(a.Id, out var old) && old == key && a.HasActions) return;
+        _actionKeys[a.Id] = key;
+
+        var actions = new List<IslandAction>();
+        if (open != null) actions.Add(new IslandAction(Glyphs.Open, label, open, primary: true));
+        if (label == "Fullcourt" && g.Link != null) { var espn = g.Link; actions.Add(new IslandAction("", "ESPN", () => Ui.OpenUrl(espn))); }
+        if (g.Tracked)
         {
-            a.OnOpen = () => Ui.OpenUrl(url!);
-            a.Actions = new[] { new IslandAction(Glyphs.Open, "Open game", () => Ui.OpenUrl(url!)) };
+            var (lg, id, cardId) = (g.League, g.Id, a.Id);
+            actions.Add(new IslandAction(Glyphs.Close, "Stop tracking", () => { FullcourtLink.Track(lg, id, false); _hub.Remove(cardId); }));
         }
+        a.Actions = actions;
     }
 
     static Color Brighten(Color c)
@@ -277,6 +333,8 @@ public sealed class SportsService : IModule
 
     public void Dispose()
     {
+        FullcourtLink.Changed -= Wake;
+        _wake.TrySetResult();
         _cts.Cancel();
         _hub.RemoveWhere(a => a.Kind == ActivityKind.Sports);
     }

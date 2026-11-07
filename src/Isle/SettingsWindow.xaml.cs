@@ -68,10 +68,12 @@ public partial class SettingsWindow : Window
 
         AppRegistry.Detected += OnAppsDetected;
         AmpliteService.StateChanged += OnAmpliteChanged;
+        FullcourtLink.Changed += OnFullcourtChanged;
         Closed += (_, _) =>
         {
             AppRegistry.Detected -= OnAppsDetected;
             AmpliteService.StateChanged -= OnAmpliteChanged;
+            FullcourtLink.Changed -= OnFullcourtChanged;
             if (_apply.IsEnabled) { _apply.Stop(); App.Instance.ApplySettings(_s.Clone()); }
         };
 
@@ -110,6 +112,7 @@ public partial class SettingsWindow : Window
     }
 
     void OnAppsDetected() => Dispatcher.InvokeAsync(() => { if (_current?.Title == "Apps") Rebuild(); });
+    void OnFullcourtChanged() => Dispatcher.InvokeAsync(() => { if (_current?.Title == "Live sports") Rebuild(); });
     void OnAmpliteChanged() => Dispatcher.InvokeAsync(UpdateAmpliteStatus);
 
     // ───────────────────────────── building blocks ─────────────────────────────
@@ -308,6 +311,9 @@ public partial class SettingsWindow : Window
         Section("Keyboard");
         var hotkey = Text(() => _s.Hotkey, v => _s.Hotkey = v.Trim(), 160, "Modifiers + key, e.g. Ctrl+Alt+I, Win+Shift+D. Leave empty to turn off.");
         Card("Shortcut to open the island", "Modifier keys plus one key, like Ctrl+Alt+I or Win+Shift+Space. Leave empty for none.", hotkey);
+        var hideKey = Text(() => _s.HideHotkey, v => _s.HideHotkey = v.Trim(), 160, "Modifiers + key, e.g. Ctrl+Alt+H. Leave empty to turn off.");
+        Card("Shortcut to hide or show the island", "Press once to hide Isle completely, again to bring it back. Leave empty for none.", hideKey);
+        Page.Children.Add(Hint("If a shortcut doesn't work, another app is already using it — try a different key.", new Thickness(0, 4, 0, 0)));
 
         Section("Try it", "Put sample cards on the island to see your settings in action.");
         Card("Preview", null, Row(
@@ -566,16 +572,40 @@ public partial class SettingsWindow : Window
 
     void BuildSports()
     {
-        Page.Children.Add(Hint("Scores from ESPN. Turn the whole type on or off on the Activities page.", new Thickness(0, 0, 0, 6)));
-        Section("Teams");
+        Page.Children.Add(Hint("Live scores from ESPN — the same data Fullcourt uses. Turn the whole type on or off on the Activities page.", new Thickness(0, 0, 0, 6)));
+
+        Section("Fullcourt");
+        var app = FullcourtLink.AppPath;
+        Card(app != null ? "Fullcourt for Windows is installed" : "Fullcourt for Windows isn't installed",
+            app ?? "Games open on the Fullcourt website instead. Get the app from Fullcourt's GitHub Releases.",
+            Row(Btn("Open Fullcourt", () => FullcourtLink.OpenInFullcourt(), Glyphs.Open),
+                app == null ? Btn("Get the app", () => Ui.OpenUrl("https://github.com/larosa023/fullcourt/releases/latest"), Glyphs.Download) : new TextBlock()));
+        Card("Open games in", "Auto uses the app when it's installed, otherwise the site. Leagues Fullcourt doesn't cover open on ESPN.",
+            Combo(new[]
+            {
+                ("Auto (app, else site)", "auto"), ("Fullcourt app", "app"), ("Fullcourt website", "site"), ("ESPN", "espn"), ("A custom link", "custom"),
+            }, () => _s.SportsOpenIn, v => _s.SportsOpenIn = v, Rebuild));
+        if (_s.SportsOpenIn == "custom")
+            Card("Custom link", null, Text(() => _s.SportsOpenUrl, v => _s.SportsOpenUrl = v.Trim(), 280), indent: 24);
+        Card("Fullcourt website", "The GitHub Pages copy by default.", Text(() => _s.FullcourtSiteUrl, v => _s.FullcourtSiteUrl = v.Trim(), 280));
+
+        Toggle("Follow Fullcourt", "Use the favorite teams you pick in Fullcourt, and track games you send with \"Show on Isle\".", () => _s.SportsUseFullcourt, v => _s.SportsUseFullcourt = v);
+
+        var synced = FullcourtLink.Favorites.Count == 0
+            ? "Nothing yet. In Fullcourt, make a team your team (turn on Settings → Isle on the website)."
+            : string.Join(", ", FullcourtLink.Favorites.Select(f => $"{f.Name} ({f.League.ToUpperInvariant()})"));
+        var trackedText = FullcourtLink.Tracked.Count == 0 ? "No games" : $"{FullcourtLink.Tracked.Count} game{(FullcourtLink.Tracked.Count == 1 ? "" : "s")}";
+        Card("From Fullcourt", $"Your teams: {synced}\nTracking: {trackedText}" +
+            (FullcourtLink.LastSync == default ? "" : $"\nLast synced {Ago(FullcourtLink.LastSync)}"),
+            Btn("Clear", () => { FullcourtLink.ClearSynced(); Rebuild(); }), indent: 24);
+
+        Section("Your teams in Isle");
         Card("Leagues", "nba, wnba, ncaam, ncaaw, nfl, ncaaf, mlb, nhl, mls, epl, laliga, ucl",
             Text(() => string.Join(", ", _s.SportsLeagues), v => _s.SportsLeagues = SplitList(v).Select(x => x.ToLowerInvariant()).ToList(), 280));
-        Card("Favorite teams", "Abbreviations like NYK, BKN, NYG. Prefix a league if one is shared: nfl:NYJ",
+        Card("Favorite teams", "ESPN abbreviations like NY, BKN, NYG. Prefix a league if one is shared: nfl:NYJ. Added to the ones Fullcourt syncs.",
             Text(() => string.Join(", ", _s.FavoriteTeams), v => _s.FavoriteTeams = SplitList(v), 280));
         Toggle("Show every live game in those leagues", "Not just your favorites.", () => _s.SportsShowAllLive, v => _s.SportsShowAllLive = v);
         Toggle("Peek on score changes", "Never for basketball — it scores too often.", () => _s.SportsPeekOnScore, v => _s.SportsPeekOnScore = v);
-        Section("Opening a game");
-        Card("Open games in", "e.g. your Fullcourt URL. Empty = the ESPN game page.", Text(() => _s.SportsOpenUrl, v => _s.SportsOpenUrl = v.Trim(), 280));
     }
 
     void BuildIntegrations()
