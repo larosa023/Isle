@@ -5,7 +5,8 @@ Isle listens on **`http://127.0.0.1:47820`** (port configurable in Settings → 
 **Who may call it**
 
 - **Desktop apps and scripts** (no `Origin` header): always allowed.
-- **Websites** (browser `fetch`, which sends `Origin`): only origins listed under *Settings → Integrations → Allowed websites*, e.g. `https://fullcourt.netlify.app`. `http://localhost:*` dev servers are always allowed. Isle answers CORS and Chrome's Private Network Access preflights for allowed origins.
+- **Fullcourt** (its GitHub Pages, Netlify and Cloudflare sites, and the Windows app) is always allowed.
+- **Other websites** (browser `fetch`, which sends `Origin`): only origins listed under *Settings → Integrations → Allowed websites*, e.g. `https://fullcourt.netlify.app`. `http://localhost:*` dev servers are always allowed. Isle answers CORS and Chrome's Private Network Access preflights for allowed origins.
 - Websites can only attach `http(s)` links. Desktop apps can also use custom schemes (`amplite://preset/bass`). `file:` and script schemes are refused for everyone.
 
 ## Endpoints
@@ -18,6 +19,9 @@ Isle listens on **`http://127.0.0.1:47820`** (port configurable in Settings → 
 | `DELETE` | `/v1/activities/{app}/{id}` | Remove one. |
 | `POST` | `/v1/notify` | One-off notification that peeks for a few seconds. |
 | `POST` | `/v1/timers` | Start an Isle timer: `{ "minutes": 12, "label": "Pasta" }`. |
+| `POST` | `/v1/fullcourt/sync` | Fullcourt: `{ "league": "nba", "favorite": { "abbr": "NY", "name": "Knicks" } }` (`favorite: null` clears it). |
+| `POST` | `/v1/fullcourt/track` | Fullcourt: `{ "league": "nba", "game": "401…", "on": true }` — track one game until it ends. |
+| `GET` | `/v1/fullcourt/track` | Games currently tracked from Fullcourt. |
 
 ### `POST /v1/activities`
 

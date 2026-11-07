@@ -6,7 +6,7 @@
 - **Timers** — start from the island (hover it when idle), right-click, the tray, or the API. Pause, +1 min, and a chime when done.
 - **Downloads** — live size and speed for Chrome, Edge, Firefox, Brave and Opera downloads, then *Open* / *Show in folder*. No extension needed.
 - **Calls** — Teams, Discord, Zoom, Slack, Phone Link, WhatsApp, Meet in a browser… detected from microphone use, with a running call timer. Optional mic-in-use indicator for every other app.
-- **Live sports** — your teams' scores from ESPN (NBA, WNBA, NFL, NCAA, MLB, NHL, MLS, EPL, LaLiga, UCL), with a peek on finals and score changes. Click to open the game in Fullcourt or ESPN.
+- **Live sports + Fullcourt** — your teams' scores from ESPN (NBA, WNBA, NFL, NCAA, MLB, NHL, MLS, EPL, LaLiga, UCL), with a peek on finals and score changes. Isle follows the favorite teams you pick in **Fullcourt**, tracks any game you send with Fullcourt's **Show on Isle** button, and opens games in the Fullcourt app (or the Fullcourt site on GitHub Pages if the app isn't installed).
 - **Notifications** — mirrors Windows toasts (experimental — see below), and your own apps can push notifications through the local API.
 - **Amplite built in** — Isle talks to Amplite's local API: cover, song, live progress, prev / play / next, **Like**, and an **EQ preset picker** right on the island. No setup; it just appears while Amplite is running, and replaces the duplicate Spotify card.
 - **You decide what shows** — every app Isle detects (players, call apps, notification senders, browsers, API clients) gets its own *show*, *peek* and *priority* setting on the **Apps** page, or right-click the island → *Hide this app*.
@@ -35,7 +35,8 @@ Requires Windows 10 (2004 / build 19041) or Windows 11.
 | **Scroll** on the island | Flip between activities when several are live |
 | **Click** the expanded island | Open the activity (the game page, the downloaded file…) |
 | **Right-click** | New timer, hide this app, Do not disturb, settings, updates, hide for an hour, quit |
-| **Ctrl+Alt+I** | Open / close the island (change it in Settings → General) |
+| **Ctrl+Alt+I** | Open / close the island |
+| **Ctrl+Alt+H** | Hide / show the island completely (both shortcuts are in Settings → General) |
 | **Tray icon** | Same menu; left-click opens Settings |
 
 ### Settings
@@ -55,6 +56,12 @@ Settings are saved to `%APPDATA%\Isle\settings.json` (per-app choices in `apps.j
 ### Sports setup
 
 Settings → Live sports: set **Leagues** (e.g. `nba, nfl`) and **Favorite teams** by abbreviation (`NYK, BKN, NYG`). If an abbreviation exists in more than one league, prefix it: `nfl:NYJ`. Set **Open scores in** to your Fullcourt URL to open games there.
+
+### Fullcourt
+
+- **Your team:** in Fullcourt, make a team your team. The Windows app tells Isle automatically; on the website, turn on **Settings → Isle** first (your browser may ask to allow access to apps on your device).
+- **Track a game:** open any game in Fullcourt and click the island button in its top bar (*Show on Isle*). Isle shows it — upcoming, live, then the final — and forgets it after.
+- **Opening games:** Isle → Settings → Live sports → *Open games in*: Auto (the Fullcourt app if installed, otherwise the site), the app, the website, ESPN or a custom link. The site address defaults to the GitHub Pages copy, `https://larosa023.github.io/fullcourt/`.
 
 ### About notification mirroring
 
