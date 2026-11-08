@@ -89,6 +89,30 @@ public sealed class NotificationService : IModule
         var title = texts?.FirstOrDefault()?.Text ?? app;
         var body = texts == null ? null : string.Join(" ", texts.Skip(1).Select(t => t.Text));
 
+        // Phone Link rings through a notification: show it as an incoming call.
+        if (app.Contains("Phone Link", StringComparison.OrdinalIgnoreCase) &&
+            (title + " " + body).Contains("call", StringComparison.OrdinalIgnoreCase) &&
+            !(title + " " + body).Contains("missed", StringComparison.OrdinalIgnoreCase))
+        {
+            var call = new Activity("phonelink:ring:" + n.Id, ActivityKind.Call)
+            {
+                Source = "Phone Link",
+                Title = "Incoming call",
+                Subtitle = title,
+                Glyph = Glyphs.Phone,
+                Accent = System.Windows.Media.Color.FromRgb(0x30, 0xD1, 0x58),
+                Priority = 100,
+                IsLive = true,
+                AppKey = "mic:phone link",
+                OnOpen = CallService.OpenPhoneLink,
+            };
+            call.Actions = new[] { new IslandAction(Glyphs.Phone, "Open Phone Link", CallService.OpenPhoneLink, primary: true) };
+            call.SetTtl(TimeSpan.FromSeconds(30));
+            _hub.Add(call);
+            _hub.Peek(call);
+            return;
+        }
+
         var a = new Activity("notification:" + n.Id, ActivityKind.Notification)
         {
             Source = app,

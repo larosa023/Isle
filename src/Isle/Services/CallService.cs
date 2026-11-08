@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Process = System.Diagnostics.Process;
+using ProcessStartInfo = System.Diagnostics.ProcessStartInfo;
 using System.Linq;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -119,9 +121,54 @@ public sealed class CallService : IModule
             var text = Fmt.Clock(elapsed);
             current.Trailing = text;
             current.Badge = text;
+            if (info.call) UpdateCallCard(current, name);
         }
 
         _poll.Interval = _active.Count > 0 ? TimeSpan.FromSeconds(1) : TimeSpan.FromSeconds(2);
+    }
+
+    const string PhoneLink = "Phone Link";
+    readonly Dictionary<string, bool?> _muteShown = new();
+
+    /// <summary>Mic mute on every call card (works for any app — it mutes the Windows mic), plus Phone Link extras.</summary>
+    void UpdateCallCard(Activity a, string name)
+    {
+        bool? muted = CoreAudio.MicMuted();
+        if (_muteShown.TryGetValue(a.Id, out var shown) && shown == muted && a.HasActions) return;
+        _muteShown[a.Id] = muted;
+
+        bool phone = name == PhoneLink;
+        a.Title = phone ? "Phone call" : "On a call";
+        a.Subtitle = muted == true ? $"{name} \u00B7 your mic is muted" : name;
+        a.Accent = muted == true ? Color.FromRgb(0xFF, 0x45, 0x3A) : Green;
+        a.Glyph = muted == true ? "\uEC54" : Glyphs.Phone;
+
+        var actions = new List<IslandAction>();
+        if (muted != null)
+        {
+            actions.Add(muted == true
+                ? new IslandAction(Glyphs.Mic, "Unmute", () => { CoreAudio.SetMicMuted(false); _muteShown.Remove(a.Id); Poll(); }, primary: true)
+                : new IslandAction("\uEC54", "Mute", () => { CoreAudio.SetMicMuted(true); _muteShown.Remove(a.Id); Poll(); }, primary: true));
+        }
+        if (phone)
+        {
+            actions.Add(new IslandAction(Glyphs.Open, "Phone Link", OpenPhoneLink));
+            a.OnOpen = OpenPhoneLink;
+        }
+        a.Actions = actions;
+    }
+
+    /// <summary>Brings Phone Link forward (to hang up, switch to the phone, open the keypad…).</summary>
+    public static void OpenPhoneLink()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("explorer.exe", @"shell:AppsFolder\Microsoft.YourPhone_8wekyb3d8bbwe!App") { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Log.Error("open phone link", ex);
+        }
     }
 
     static string IdFor(string name) => "call:" + name.ToLowerInvariant();
@@ -165,6 +212,7 @@ public sealed class CallService : IModule
     public void Dispose()
     {
         _poll.Stop();
+        _muteShown.Clear();
         _hub.RemoveWhere(a => a.Kind == ActivityKind.Call);
         _active.Clear();
     }

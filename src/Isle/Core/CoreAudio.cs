@@ -173,6 +173,45 @@ public static class CoreAudio
         }
     }
 
+    // ───────────── microphone (default communications mic), on demand ─────────────
+
+    /// <summary>Runs <paramref name="use"/> with the default call microphone's volume control.</summary>
+    static T WithMic<T>(Func<IAudioEndpointVolume, T> use, T fallback)
+    {
+        IMMDeviceEnumerator? en = null;
+        IMMDevice? dev = null;
+        IAudioEndpointVolume? vol = null;
+        try
+        {
+            en = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+            en.GetDefaultAudioEndpoint(1 /* capture */, 2 /* communications */, out dev);
+            var iid = typeof(IAudioEndpointVolume).GUID;
+            dev.Activate(ref iid, 23, IntPtr.Zero, out var o);
+            vol = (IAudioEndpointVolume)o;
+            return use(vol);
+        }
+        catch
+        {
+            return fallback;
+        }
+        finally
+        {
+            if (vol != null) Marshal.ReleaseComObject(vol);
+            if (dev != null) Marshal.ReleaseComObject(dev);
+            if (en != null) Marshal.ReleaseComObject(en);
+        }
+    }
+
+    /// <summary>Whether the default call mic is muted (null = no mic).</summary>
+    public static bool? MicMuted() => WithMic<bool?>(v => { v.GetMute(out var m); return m; }, null);
+
+    public static void SetMicMuted(bool mute) => WithMic(v =>
+    {
+        var ctx = Guid.Empty;
+        v.SetMute(mute, ref ctx);
+        return true;
+    }, false);
+
     [ComVisible(true)]
     public sealed class VolumeCallback : IAudioEndpointVolumeCallback
     {

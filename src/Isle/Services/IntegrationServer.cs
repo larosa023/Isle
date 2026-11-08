@@ -54,6 +54,12 @@ public sealed class IntegrationServer : IModule
         public double? Ttl { get; set; }
         public bool? Peek { get; set; }
         public string? Url { get; set; }
+        /// <summary>Clicking the open island POSTs here (a 127.0.0.1 / localhost URL) with action "open".</summary>
+        public string? OpenCallback { get; set; }
+        /// <summary>Unix ms: Isle shows a running clock (elapsed since this time) as the trailing text and badge.</summary>
+        public double? Since { get; set; }
+        /// <summary>Unix ms: Isle shows a countdown to this time.</summary>
+        public double? Until { get; set; }
         public List<ActionDto>? Actions { get; set; }
     }
 
@@ -116,6 +122,22 @@ public sealed class IntegrationServer : IModule
     static AppSettings S => AppSettings.Current;
     readonly TimerService _timers;
     readonly CancellationTokenSource _cts = new();
+    readonly Dictionary<string, (DateTime? since, DateTime? until)> _clocks = new();
+    System.Windows.Threading.DispatcherTimer? _clockTimer;
+
+    void TickClocks()
+    {
+        foreach (var (id, c) in _clocks.ToList())
+        {
+            var a = _hub.Get(id);
+            if (a == null) { _clocks.Remove(id); continue; }
+            var t = c.since is DateTime s ? DateTime.UtcNow - s : c.until is DateTime u ? u - DateTime.UtcNow : TimeSpan.Zero;
+            var text = c.until != null ? Fmt.Countdown(t) : Fmt.Clock(t);
+            a.Trailing = text;
+            a.Badge = text;
+        }
+        if (_clocks.Count == 0) _clockTimer?.Stop();
+    }
     TcpListener? _listener;
 
     public IntegrationServer(ActivityHub hub, AppSettings settings, TimerService timers)
@@ -345,7 +367,26 @@ public sealed class IntegrationServer : IModule
         a.IsLive = dto.Live == true;
         a.Priority = Math.Clamp(dto.Priority ?? 55, 0, 90); // never outranks a call
         a.ExpiresAt = DateTime.UtcNow + TimeSpan.FromSeconds(dto.Ttl is double t && t > 0 ? Math.Min(t, 86400) : 86400);
-        a.OnOpen = dto.Url != null ? () => OpenSafe(dto.Url, fromBrowser) : null;
+        var openCb = dto.OpenCallback;
+        a.OnOpen = dto.Url != null ? () => OpenSafe(dto.Url, fromBrowser)
+            : openCb != null ? () => _ = CallbackAsync(openCb, app, dto.Id ?? "default", "open")
+            : null;
+
+        DateTime? since = dto.Since is double sm && sm > 0 ? DateTime.UnixEpoch.AddMilliseconds(sm) : null;
+        DateTime? until = dto.Until is double um && um > 0 ? DateTime.UnixEpoch.AddMilliseconds(um) : null;
+        if (since != null || until != null)
+        {
+            _clocks[id] = (since, until);
+            _clockTimer ??= new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
+            _clockTimer.Tick -= OnClockTick;
+            _clockTimer.Tick += OnClockTick;
+            _clockTimer.Start();
+            TickClocks();
+        }
+        else
+        {
+            _clocks.Remove(id);
+        }
 
         var actions = new List<IslandAction>();
         foreach (var ad in (dto.Actions ?? new List<ActionDto>()).Take(4))
@@ -537,8 +578,11 @@ public sealed class IntegrationServer : IModule
         _ => "Error",
     };
 
+    void OnClockTick(object? sender, EventArgs e) => TickClocks();
+
     public void Dispose()
     {
+        _clockTimer?.Stop();
         _cts.Cancel();
         try { _listener?.Stop(); } catch { }
         _listener = null;
