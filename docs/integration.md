@@ -63,6 +63,8 @@ Only `app` and `title` are required. Fields:
 - `ttl` — seconds until it disappears (default and max 24 h). Re-POST to extend.
 - `peek` — briefly expand. Defaults to `true` for new activities, `false` for updates.
 - `url` — opened when the expanded island is clicked.
+- `openCallback` — instead of a URL, have Isle POST `{ "app", "id", "action": "open" }` to this `127.0.0.1` / `localhost` address when the open island is clicked.
+- `since` / `until` — Unix time in milliseconds. Isle shows a live elapsed clock (`since`) or countdown (`until`) as the trailing text and badge, ticking by itself — no need to re-send every second.
 - `actions` — up to 4 buttons. Each can open a `url`, POST to a `callback` (must be `127.0.0.1`/`localhost`), and/or `dismiss` the activity. Callbacks receive `{ "app", "id", "action" }`.
 
 ### `POST /v1/notify`
