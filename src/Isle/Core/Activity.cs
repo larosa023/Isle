@@ -7,7 +7,7 @@ using System.Windows.Media;
 
 namespace Isle.Core;
 
-public enum ActivityKind { Media, Timer, Download, Call, Notification, Sports, Update, Custom }
+public enum ActivityKind { Media, Timer, Download, Call, Notification, Sports, Update, Custom, System }
 
 /// <summary>An entry in a button's drop-down menu.</summary>
 public sealed record IslandMenuItem(string Label, bool Checked, Action Invoke);
@@ -66,6 +66,15 @@ public sealed class Activity : INotifyPropertyChanged
     /// <summary>Clicking the expanded island body runs this.</summary>
     public Action? OnOpen { get; set; }
 
+    /// <summary>When set, clicking the expanded progress bar seeks to that fraction (0–1).</summary>
+    public Action<double>? Seek { get; set; }
+
+    /// <summary>When set, scrolling on the open card calls this with +1 / -1 instead of switching cards.</summary>
+    public Action<int>? OnScroll { get; set; }
+
+    /// <summary>Short-lived status (volume, caps lock…): never shown in the companion bubble.</summary>
+    public bool IsTransient { get; set; }
+
     public void SetTtl(TimeSpan ttl) => ExpiresAt = DateTime.UtcNow + ttl;
 
     string? _source;
@@ -80,7 +89,22 @@ public sealed class Activity : INotifyPropertyChanged
     public bool HasSubtitle => !string.IsNullOrWhiteSpace(_subtitle);
 
     ImageSource? _image;
-    public ImageSource? Image { get => _image; set { if (Set(ref _image, value)) { Raise(nameof(HasImage)); Raise(nameof(ShowGlyph)); } } }
+    ImageSource? _glow;
+    public ImageSource? Image
+    {
+        get => _image;
+        set
+        {
+            if (!Set(ref _image, value)) return;
+            _glow = null;
+            Raise(nameof(HasImage));
+            Raise(nameof(ShowGlyph));
+            Raise(nameof(GlowSource));
+        }
+    }
+
+    /// <summary>A tiny blurred copy of the artwork, stretched as a soft background behind the open card.</summary>
+    public ImageSource? GlowSource => _glow ??= _image is System.Windows.Media.Imaging.BitmapSource b ? Images.Glow(b) : null;
     public bool HasImage => _image != null;
 
     string _glyph = "";

@@ -47,6 +47,78 @@ internal static class Native
     [DllImport("user32.dll")]
     public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
+    // ── clipboard, messages between Isle instances, foreground app, memory, display ──
+    public const int WM_CLIPBOARDUPDATE = 0x031D, WM_COPYDATA = 0x004A;
+
+    [DllImport("user32.dll", SetLastError = true)] public static extern bool AddClipboardFormatListener(IntPtr hwnd);
+    [DllImport("user32.dll", SetLastError = true)] public static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string? cls, string title);
+    [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, ref COPYDATASTRUCT lParam);
+    [DllImport("user32.dll")] public static extern bool AllowSetForegroundWindow(int pid);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+    [DllImport("user32.dll")] public static extern short GetKeyState(int vk);
+    [DllImport("kernel32.dll")] public static extern bool SetProcessWorkingSetSizeEx(IntPtr process, IntPtr min, IntPtr max, uint flags);
+    [DllImport("kernel32.dll")] public static extern IntPtr GetCurrentProcess();
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct COPYDATASTRUCT
+    {
+        public IntPtr dwData;
+        public int cbData;
+        public IntPtr lpData;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct DEVMODE
+    {
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
+        public short dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra;
+        public int dmFields, dmPositionX, dmPositionY, dmDisplayOrientation, dmDisplayFixedOutput;
+        public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
+        public short dmLogPixels;
+        public int dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
+        public int dmICMMethod, dmICMIntent, dmMediaType, dmDitherType, dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern bool EnumDisplaySettings(string? device, int mode, ref DEVMODE dm);
+
+    /// <summary>Refresh rate of a display in Hz (60 if unknown).</summary>
+    public static int RefreshRate(string? device)
+    {
+        try
+        {
+            var dm = new DEVMODE { dmSize = (short)Marshal.SizeOf<DEVMODE>() };
+            if (EnumDisplaySettings(device, -1, ref dm) && dm.dmDisplayFrequency is > 1 and < 1000) return dm.dmDisplayFrequency;
+        }
+        catch { }
+        return 60;
+    }
+
+    /// <summary>Gives memory the island isn't using back to Windows (it pages back in instantly if needed).</summary>
+    public static void TrimWorkingSet()
+    {
+        try { SetProcessWorkingSetSizeEx(GetCurrentProcess(), new IntPtr(-1), new IntPtr(-1), 0); } catch { }
+    }
+
+    public static uint ForegroundProcessId()
+    {
+        var fg = GetForegroundWindow();
+        if (fg == IntPtr.Zero) return 0;
+        GetWindowThreadProcessId(fg, out var pid);
+        return pid;
+    }
+
+    /// <summary>A normal window filling the work area of its monitor (maximized), not the desktop or taskbar.</summary>
+    public static bool IsForegroundMaximized(IntPtr self)
+    {
+        var fg = GetForegroundWindow();
+        if (fg == IntPtr.Zero || fg == self || fg == GetShellWindow() || fg == GetDesktopWindow()) return false;
+        if (!IsZoomed(fg)) return false;
+        return MonitorFromWindow(fg, 2) == MonitorFromWindow(self, 2);
+    }
+
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     static extern int SHGetKnownFolderPath([MarshalAs(UnmanagedType.LPStruct)] Guid id, uint flags, IntPtr token, out string path);
 
@@ -60,6 +132,17 @@ internal static class Native
         public RECT rcMonitor;
         public RECT rcWork;
         public uint dwFlags;
+    }
+
+    public static string ScreenshotsFolder()
+    {
+        try
+        {
+            if (SHGetKnownFolderPath(new Guid("B7BEDE81-DF94-4682-A7D8-57A52620B86F"), 0, IntPtr.Zero, out var p) == 0)
+                return p;
+        }
+        catch { }
+        return System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots");
     }
 
     public static string DownloadsFolder()

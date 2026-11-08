@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -45,6 +48,8 @@ public partial class App : Application
         }
         if (!_ownsMutex)
         {
+            // Isle is already running: hand it this command line (no arguments = open Settings).
+            ForwardToRunningInstance(e.Args);
             Shutdown();
             return;
         }
@@ -58,7 +63,7 @@ public partial class App : Application
         Settings = AppSettings.Load();
         AppSettings.Current = Settings;
         ThemeManager.Apply(Settings);
-        Visualizer.AnimationsEnabled = Settings.AnimatedVisualizer;
+        Visualizer.Mode = Settings.VisualizerMode;
         if (Settings.StartWithWindows) StartupRegistration.Set(true); // keep the path fresh if the exe moved
         UpdateService.CleanupOldBinaries();
 
@@ -70,6 +75,7 @@ public partial class App : Application
         };
         AppRegistry.Changed += () => Hub.Reorder();
         Timers = new TimerService(Hub);
+        Timers.FocusChanged += () => Hub.Reorder();
         Updates = new UpdateService(Hub, Settings);
 
         _island = new MainWindow(Hub, Settings);
@@ -80,6 +86,9 @@ public partial class App : Application
 
         StartModules();
         Updates.Start();
+
+        var commands = e.Args.Where(x => x != "--updated" && x != "--autostart").ToArray();
+        if (commands.Length > 0) Dispatcher.InvokeAsync(() => HandleCommand(commands), DispatcherPriority.ApplicationIdle);
 
         if (justUpdated)
         {
@@ -101,7 +110,7 @@ public partial class App : Application
         var s = Settings;
         if (!s.PeekOnNewActivity || !s.Kind(a.Kind).Peek || !AppRegistry.CanPeek(a.AppKey)) return false;
         bool urgent = a.Kind == ActivityKind.Call || (a.Kind == ActivityKind.Timer && a.Priority >= 95);
-        bool quiet = s.DoNotDisturb || s.InQuietHours(DateTime.Now);
+        bool quiet = s.DoNotDisturb || s.InQuietHours(DateTime.Now) || (s.FocusDndDuringFocus && Timers.InFocus && a.AppKey != "timer:focus");
         return !quiet || (urgent && s.AlertUrgentWhenQuiet);
     }
 
@@ -115,6 +124,8 @@ public partial class App : Application
         if (s.Kind("notification").Enabled) _modules.Add(new NotificationService(Hub, s));
         if (s.Kind("sports").Enabled) _modules.Add(new SportsService(Hub, s));
         if (s.ApiEnabled) _modules.Add(new IntegrationServer(Hub, s, Timers));
+        if (s.Kind("system").Enabled) _modules.Add(new SystemService(Hub));
+        _modules.Add(new WeatherService());
 
         foreach (var m in _modules)
         {
@@ -145,7 +156,6 @@ public partial class App : Application
 
         ThemeManager.Apply(s);
         foreach (var a in Hub.All) a.RefreshTheme();
-        Visualizer.AnimationsEnabled = s.AnimatedVisualizer;
         _island?.ApplySettings(s);
         Updates.UpdateSettings(s);
 
@@ -215,17 +225,122 @@ public partial class App : Application
         }
     }
 
-    public void ShowSettings()
+    public void ShowSettings() => ShowSettings(null);
+
+    public void ShowSettings(string? page)
     {
         if (_settingsWindow != null)
         {
+            if (_settingsWindow.WindowState == WindowState.Minimized) _settingsWindow.WindowState = WindowState.Normal;
+            if (page != null) _settingsWindow.GoTo(page);
             _settingsWindow.Activate();
             return;
         }
-        _settingsWindow = new SettingsWindow(Settings);
+        _settingsWindow = new SettingsWindow(Settings, page);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
         _settingsWindow.Activate();
+    }
+
+    // ───────────────────────────── command line & commands ─────────────────────────────
+
+    /// <summary>Sends this process's arguments to the Isle that's already running.</summary>
+    static void ForwardToRunningInstance(string[] args)
+    {
+        try
+        {
+            var hwnd = IntPtr.Zero;
+            for (int i = 0; i < 20 && hwnd == IntPtr.Zero; i++)
+            {
+                hwnd = Native.FindWindow(null, "Isle Island");
+                if (hwnd == IntPtr.Zero) Thread.Sleep(150); // it may still be starting up
+            }
+            if (hwnd == IntPtr.Zero) return;
+            Native.GetWindowThreadProcessId(hwnd, out var pid);
+            Native.AllowSetForegroundWindow((int)pid); // so Settings can come to the front
+            var text = string.Join("\n", args.Length == 0 ? new[] { "--settings" } : args);
+            var ptr = Marshal.StringToHGlobalUni(text);
+            try
+            {
+                var cds = new Native.COPYDATASTRUCT { dwData = new IntPtr(0x1515), cbData = (text.Length + 1) * 2, lpData = ptr };
+                Native.SendMessage(hwnd, Native.WM_COPYDATA, IntPtr.Zero, ref cds);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(ptr);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("forward command", ex);
+        }
+    }
+
+    /// <summary>
+    /// Runs a command from the command line, a second launch, or the local API:
+    /// --settings, --toggle, --expand, --hide, --show, --toggle-hide, --timer 5m [--label Tea],
+    /// --stopwatch, --focus, --stop-focus, --dnd on|off|toggle, --preview, --quit.
+    /// </summary>
+    public string HandleCommand(IReadOnlyList<string> args)
+    {
+        string? label = null;
+        for (int i = 0; i < args.Count; i++)
+            if (args[i] is "--label" && i + 1 < args.Count) label = args[i + 1];
+
+        var done = new List<string>();
+        for (int i = 0; i < args.Count; i++)
+        {
+            var cmd = args[i].Trim().TrimStart('-', '/').ToLowerInvariant();
+            string? next = i + 1 < args.Count && !args[i + 1].StartsWith("--") ? args[i + 1] : null;
+            switch (cmd)
+            {
+                case "settings": ShowSettings(next); if (next != null) i++; break;
+                case "toggle": case "expand": _island?.ToggleExpanded(); break;
+                case "hide": _island?.SetUserHidden(true); break;
+                case "show": _island?.SetUserHidden(false); break;
+                case "toggle-hide": ToggleIslandHidden(); break;
+                case "timer":
+                    var d = ParseDuration(next) ?? TimeSpan.FromMinutes(5);
+                    if (next != null) i++;
+                    Timers.Start(d, label);
+                    break;
+                case "stopwatch": Timers.ToggleStopwatch(); break;
+                case "focus": Timers.StartFocus(); break;
+                case "stop-focus": Timers.StopFocus(); break;
+                case "dnd":
+                {
+                    var st = Settings.Clone();
+                    st.DoNotDisturb = next switch { "on" => true, "off" => false, _ => !st.DoNotDisturb };
+                    if (next != null) i++;
+                    ApplySettings(st);
+                    break;
+                }
+                case "preview": ShowDemo(next ?? "media"); if (next != null) i++; break;
+                case "quit": case "exit": Quit(); break;
+                case "label": i++; continue;
+                case "updated": case "autostart": continue;
+                default: return $"unknown command: {args[i]}";
+            }
+            done.Add(cmd);
+        }
+        return done.Count == 0 ? "nothing to do" : "ok";
+    }
+
+    /// <summary>"90s", "5m", "1h30m", "1:30" (m:ss), or a plain number of minutes.</summary>
+    public static TimeSpan? ParseDuration(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        text = text.Trim().ToLowerInvariant();
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var minutes))
+            return minutes > 0 ? TimeSpan.FromMinutes(minutes) : null;
+        if (TimeSpan.TryParseExact(text, new[] { @"m\:ss", @"h\:mm\:ss" }, CultureInfo.InvariantCulture, out var ts)) return ts;
+        var m = Regex.Match(text, @"^(?:(\d+(?:\.\d+)?)h)?\s*(?:(\d+(?:\.\d+)?)m(?:in)?)?\s*(?:(\d+)s(?:ec)?)?$");
+        if (!m.Success || m.Value.Length == 0) return null;
+        double h = m.Groups[1].Success ? double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) : 0;
+        double mi = m.Groups[2].Success ? double.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture) : 0;
+        double s = m.Groups[3].Success ? double.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture) : 0;
+        var total = TimeSpan.FromHours(h) + TimeSpan.FromMinutes(mi) + TimeSpan.FromSeconds(s);
+        return total > TimeSpan.Zero ? total : null;
     }
 
     public (bool open, bool hide) HotkeysActive => _island?.HotkeysActive ?? (false, false);
@@ -250,6 +365,8 @@ public partial class App : Application
             timers.Items.Add(Item(m == 60 ? "1 hour" : $"{m} min", () => Timers.Start(TimeSpan.FromMinutes(m))));
         }
         menu.Items.Add(timers);
+        menu.Items.Add(Item("Stopwatch", Timers.ToggleStopwatch));
+        menu.Items.Add(Timers.InFocus ? Item("End focus session", Timers.StopFocus) : Item("Start a focus session", Timers.StartFocus));
 
         if (current is { AppKey: string key })
         {

@@ -27,7 +27,7 @@ public sealed class MediaService : IModule
     GlobalSystemMediaTransportControlsSession? _session;
     string? _trackKey;
     int _propsVersion;
-    bool _disposed, _playing, _canPrev, _canNext;
+    bool _disposed, _playing, _canPrev, _canNext, _audio;
     string _actionsKey = "";
     DateTime? _pausedSince;
     TimeSpan _position, _duration;
@@ -44,6 +44,8 @@ public sealed class MediaService : IModule
     {
         try
         {
+            CoreAudio.Acquire(); // scrolling on the card changes volume
+            _audio = true;
             _mgr = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
             if (_disposed) return;
             _mgr.CurrentSessionChanged += OnCurrentSessionChanged;
@@ -196,6 +198,8 @@ public sealed class MediaService : IModule
         a.Subtitle = string.IsNullOrWhiteSpace(artist) ? props.AlbumTitle : artist;
         a.Source = AppName(session.SourceAppUserModelId);
         a.AppKey = KeyFor(session.SourceAppUserModelId);
+        a.Seek ??= SeekTo;
+        a.OnScroll ??= d => CoreAudio.Step(d * 2);
         a.OnOpen = null;
 
         var key = title + "\n" + artist;
@@ -304,6 +308,27 @@ public sealed class MediaService : IModule
         catch (Exception ex) { Log.Error("media control", ex); }
     }
 
+    void SeekTo(double fraction)
+    {
+        var s = _session;
+        if (s == null || _duration.TotalSeconds < 1) return;
+        try
+        {
+            var t = s.GetTimelineProperties();
+            var target = t.StartTime + TimeSpan.FromTicks((long)(_duration.Ticks * Math.Clamp(fraction, 0, 1)));
+            _ = s.TryChangePlaybackPositionAsync(target.Ticks);
+            // show the jump right away; the app confirms it a moment later
+            _position = target - t.StartTime;
+            _updatedAt = DateTimeOffset.Now;
+            _snapshotAt = DateTimeOffset.Now;
+            Tick();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("media seek", ex);
+        }
+    }
+
     void RefreshTimeline()
     {
         var session = _session;
@@ -394,6 +419,8 @@ public sealed class MediaService : IModule
     {
         _disposed = true;
         _tick.Stop();
+        if (_audio) CoreAudio.Release();
+        _audio = false;
         AppRegistry.Changed -= OnRulesChanged;
         AmpliteService.StateChanged -= OnRulesChanged;
         Detach();

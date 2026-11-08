@@ -55,6 +55,8 @@ public partial class SettingsWindow : Window
             new("", "Appearance", BuildAppearance),
             new("", "Behavior & motion", BuildBehavior),
             new("", "Activities", BuildActivities),
+            new("", "System", BuildSystem),
+            new("", "Timers & focus", BuildTimers),
             new("", "Apps", BuildApps),
             new("", "Amplite", BuildAmplite),
             new("", "Live sports", BuildSports),
@@ -81,7 +83,124 @@ public partial class SettingsWindow : Window
             if (_apply.IsEnabled) { _apply.Stop(); App.Instance.ApplySettings(_s.Clone()); }
         };
 
+        PreviewButton.Content = Row(new TextBlock { Text = "", FontFamily = Icons, VerticalAlignment = VerticalAlignment.Center },
+                                    new TextBlock { Text = "Preview on the island", VerticalAlignment = VerticalAlignment.Center });
+        SetPlaceholder(SearchBox, "Search settings");
+        InputBindings.Add(new KeyBinding(new RelayCommand(() => { SearchBox.Focus(); SearchBox.SelectAll(); }), Key.F, ModifierKeys.Control));
+
+        _search = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(180) };
+        _search.Tick += (_, _) => { _search.Stop(); RunSearch(); };
+
         Nav.SelectedIndex = Math.Max(0, _pages.FindIndex(p => string.Equals(p.Title, page ?? _lastPage, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    readonly DispatcherTimer _search;
+    string _query = "";
+
+    /// <summary>Open a page by name (from "Isle.exe --settings System", the tray, etc.).</summary>
+    public void GoTo(string page)
+    {
+        int i = _pages.FindIndex(p => p.Title.StartsWith(page, StringComparison.OrdinalIgnoreCase));
+        if (i < 0) return;
+        SearchBox.Text = "";
+        Nav.SelectedIndex = i;
+    }
+
+    void Preview_Click(object sender, RoutedEventArgs e) => App.Instance.ShowDemo("media");
+
+    sealed class RelayCommand : ICommand
+    {
+        readonly Action _run;
+        public RelayCommand(Action run) => _run = run;
+        public event EventHandler? CanExecuteChanged { add { } remove { } }
+        public bool CanExecute(object? parameter) => true;
+        public void Execute(object? parameter) => _run();
+    }
+
+    static void SetPlaceholder(TextBox box, string text)
+    {
+        // A light hint drawn behind the text while the box is empty.
+        var hint = new VisualBrush
+        {
+            Stretch = Stretch.None,
+            AlignmentX = AlignmentX.Left,
+            Visual = new TextBlock { Text = "  " + text, Opacity = 0.55, FontSize = box.FontSize > 0 ? box.FontSize : 13 },
+        };
+        void Paint() => box.Background = box.Text.Length == 0 ? hint : null;
+        box.TextChanged += (_, _) => Paint();
+        box.Loaded += (_, _) => Paint();
+    }
+
+    // ───────────────────────────── search ─────────────────────────────
+
+    void Search_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _search.Stop();
+        _search.Start();
+    }
+
+    /// <summary>
+    /// Builds every page, then keeps only the settings whose title or description match, grouped
+    /// under their page and section. Everything stays fully interactive.
+    /// </summary>
+    void RunSearch()
+    {
+        _query = SearchBox.Text.Trim();
+        if (_query.Length == 0)
+        {
+            if (Nav.SelectedItem is ListBoxItem { Tag: PageDef cur }) Show(cur);
+            else Nav.SelectedIndex = 0;
+            return;
+        }
+
+        _ampliteStatus = null;
+        _afterApply.Clear();
+        Page.Children.Clear();
+        Page.Children.Add(new TextBlock { Text = $"Results for \u201C{_query}\u201D", FontSize = 24, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) });
+        var words = _query.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        int hits = 0;
+
+        foreach (var p in _pages)
+        {
+            int start = Page.Children.Count;
+            p.Build();
+            var built = Page.Children.Cast<UIElement>().Skip(start).ToList();
+            for (int i = Page.Children.Count - 1; i >= start; i--) Page.Children.RemoveAt(i);
+
+            var keep = new List<UIElement>();
+            TextBlock? section = null;
+            bool sectionAdded = false;
+            foreach (var el in built)
+            {
+                var tag = (el as FrameworkElement)?.Tag as string;
+                if (tag == "section") { section = (TextBlock)el; sectionAdded = false; continue; }
+                if (tag == null || !tag.StartsWith("card:")) continue;
+                var text = tag[5..].ToLowerInvariant() + " " + p.Title.ToLowerInvariant() + " " + (section?.Text.ToLowerInvariant() ?? "");
+                if (!words.All(text.Contains)) continue;
+                if (section != null && !sectionAdded) { keep.Add(section); sectionAdded = true; }
+                if (el is FrameworkElement fe) fe.Margin = new Thickness(0, 0, 0, 4);
+                keep.Add(el);
+                hits++;
+            }
+            if (keep.Count == 0) continue;
+
+            var page = p;
+            var header = new Button
+            {
+                Content = Row(new TextBlock { Text = page.Glyph, FontFamily = Icons, VerticalAlignment = VerticalAlignment.Center },
+                              new TextBlock { Text = page.Title + "  \u203A", FontSize = 13, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 18, 0, 0),
+                Padding = new Thickness(10, 4, 10, 5),
+                ToolTip = "Open this page",
+            };
+            header.Click += (_, _) => GoTo(page.Title);
+            Page.Children.Add(header);
+            foreach (var el in keep) Page.Children.Add(el);
+        }
+
+        if (hits == 0) Page.Children.Add(Hint("No settings match. Try a different word.", new Thickness(0, 12, 0, 0)));
+        Scroller.ScrollToTop();
     }
 
     FontFamily Icons => (FontFamily)FindResource("Icons");
@@ -99,6 +218,12 @@ public partial class SettingsWindow : Window
 
     void Show(PageDef p)
     {
+        if (_query.Length > 0)
+        {
+            _query = "";
+            SearchBox.Text = "";
+            _search.Stop();
+        }
         _current = p;
         _lastPage = p.Title;
         _ampliteStatus = null;
@@ -111,6 +236,7 @@ public partial class SettingsWindow : Window
 
     void Rebuild()
     {
+        if (_query.Length > 0) { RunSearch(); return; }
         if (_current == null) return;
         var offset = Scroller.VerticalOffset;
         Show(_current);
@@ -125,7 +251,7 @@ public partial class SettingsWindow : Window
 
     void Section(string title, string? hint = null)
     {
-        Page.Children.Add(new TextBlock { Text = title, FontSize = 15, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 18, 0, 6) });
+        Page.Children.Add(new TextBlock { Text = title, FontSize = 15, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 18, 0, 6), Tag = "section" });
         if (hint != null) Page.Children.Add(Hint(hint, new Thickness(0, 0, 0, 8)));
     }
 
@@ -176,6 +302,7 @@ public partial class SettingsWindow : Window
             Padding = new Thickness(16, 12, 16, 12),
             Margin = new Thickness(indent, 0, 0, 4),
             Child = content,
+            Tag = "card:" + title + " " + description,
         };
         Page.Children.Add(card);
         return card;
@@ -436,8 +563,9 @@ public partial class SettingsWindow : Window
         Section("Placement");
         var monitors = Forms.Screen.AllScreens
             .Select((sc, i) => ($"Display {i + 1} — {sc.Bounds.Width}×{sc.Bounds.Height}{(sc.Primary ? " (main)" : "")}", sc.DeviceName))
+            .Prepend(("Follow the active window", "follow"))
             .Prepend(("Main display", ""));
-        Card("Display", "Which screen the island sits on.", Combo(monitors, () => _s.Monitor, v => _s.Monitor = v));
+        Card("Display", "Which screen the island sits on. \u201CFollow\u201D moves it to whichever screen you're working on.", Combo(monitors, () => _s.Monitor, v => _s.Monitor = v));
         Card("Position", null, Combo(new[] { ("Top left", "left"), ("Top center", "center"), ("Top right", "right") }, () => _s.Align, v => _s.Align = v));
         SliderCard("Horizontal offset", "Nudge it left or right (negative moves it left when centered).", -400, 400, 2, () => _s.OffsetX, v => _s.OffsetX = v, Px);
         SliderCard("Distance from top", null, 0, 80, 1, () => _s.TopOffset, v => _s.TopOffset = v, Px);
@@ -468,8 +596,63 @@ public partial class SettingsWindow : Window
         Section("When idle");
         Toggle("Hide the pill when nothing is happening", null, () => _s.HideWhenIdle, v => _s.HideWhenIdle = v);
         Toggle("Show the time in the idle pill", "Widen the idle pill a bit if the time doesn't fit.", () => _s.IdleShowClock, v => _s.IdleShowClock = v);
+        Card("When a window is maximized", "Browser tabs live up there. Stepping aside keeps the empty pill out of their way.",
+            Combo(new[] { ("Stay put", "stay"), ("Hide the idle pill", "hideidle") }, () => _s.MaximizedBehavior, v => _s.MaximizedBehavior = v));
         Card("Quick timers", "Minutes, comma-separated (up to 5). Shown when you hover the idle island.",
             Text(() => string.Join(", ", _s.QuickTimers), v => _s.QuickTimers = SplitList(v).Select(x => int.TryParse(x, out var n) ? n : 0).Where(n => n > 0).Take(5).ToList(), 160));
+        Toggle("Stopwatch and focus buttons", "Next to the quick timers on the open idle island.", () => _s.IdleShowQuickActions, v => _s.IdleShowQuickActions = v);
+
+        Section("Weather", "Shown on the open idle island (and next to the time in the idle pill). From Open-Meteo — free, no account.");
+        Toggle("Show the weather", null, () => _s.IdleShowWeather, v => _s.IdleShowWeather = v);
+        var place = new TextBlock { FontSize = 12.5, Opacity = 0.7, Margin = new Thickness(0, 4, 0, 0), TextWrapping = TextWrapping.Wrap };
+        void ShowPlace() => place.Text = _s.WeatherPlace.Length > 0
+            ? $"Using {_s.WeatherPlace}" + (WeatherService.Current is { } w ? $" \u2014 {Math.Round(w.Temp)}{w.Unit}, {w.Text}" : "")
+            : "Type a city or ZIP and press Find.";
+        ShowPlace();
+        var loc = new TextBox { Text = _s.WeatherLocation, Width = 200 };
+        var find = Btn("Find", () => { }, "\uE721");
+        async void Find()
+        {
+            var q = loc.Text.Trim();
+            if (q.Length == 0)
+            {
+                _s.WeatherLocation = _s.WeatherPlace = "";
+                _s.WeatherLat = _s.WeatherLon = 0;
+                Changed();
+                ShowPlace();
+                return;
+            }
+            find.IsEnabled = false;
+            place.Text = "Looking it up\u2026";
+            try
+            {
+                var r = await WeatherService.FindAsync(q);
+                if (r == null) { place.Text = $"Couldn't find \u201C{q}\u201D. Try \u201CCity, State\u201D."; return; }
+                _s.WeatherLocation = q;
+                (_s.WeatherPlace, _s.WeatherLat, _s.WeatherLon) = r.Value;
+                Changed();
+                place.Text = $"Using {_s.WeatherPlace}";
+            }
+            catch (Exception ex)
+            {
+                place.Text = "Couldn't reach the weather service: " + ex.Message;
+            }
+            finally
+            {
+                find.IsEnabled = true;
+            }
+        }
+        find.Click += (_, _) => Find();
+        loc.KeyDown += (_, e) => { if (e.Key == Key.Enter) Find(); };
+        var locRow = new StackPanel();
+        locRow.Children.Add(Row(loc, find));
+        locRow.Children.Add(place);
+        Card("Location", "e.g. Holmdel, NJ \u2014 or a ZIP code. Clear it to turn weather off.", locRow);
+        Card("Units", null, Combo(new[] { ("Automatic", "auto"), ("Fahrenheit", "f"), ("Celsius", "c") }, () => _s.WeatherUnits, v => _s.WeatherUnits = v));
+
+        Section("Second activity");
+        Toggle("Show a second live activity as a bubble", "When two things are live (say music and a timer), the other one sits in a small bubble beside the pill. Click it to switch.",
+            () => _s.CompanionBubble, v => _s.CompanionBubble = v);
     }
 
     void BuildAppearance()
@@ -517,7 +700,12 @@ public partial class SettingsWindow : Window
         SliderCard("Border", "Outline thickness (the color comes from the theme).", 0, 3, 0.5, () => _s.BorderThickness, v => _s.BorderThickness = v, v => $"{v:0.#} px");
         var fonts = Fonts.SystemFontFamilies.Select(f => f.Source).OrderBy(n => n).Select(n => (n, n)).Prepend(("Segoe UI Variable (default)", ""));
         Card("Font", null, Combo(fonts, () => _s.FontFamily, v => _s.FontFamily = v));
-        Toggle("Animated music visualizer", "The bouncing bars. Off saves a little CPU.", () => _s.AnimatedVisualizer, v => _s.AnimatedVisualizer = v);
+        Card("Music visualizer", "\u201CFollows the sound\u201D reads your speakers' level 30 times a second while music is on screen.",
+            Combo(new[] { ("Follows the sound", "real"), ("Animated", "animated"), ("Still bars", "off") }, () => _s.VisualizerMode, v => _s.VisualizerMode = v));
+        Toggle("Artwork glow", "Album-art colors softly fill the open music card.", () => _s.ArtworkGlow, v => _s.ArtworkGlow = v, after: Rebuild);
+        if (_s.ArtworkGlow)
+            SliderCard("Glow strength", null, 0.1, 0.7, 0.05, () => _s.GlowStrength, v => _s.GlowStrength = v, Pct, 24);
+        Toggle("Tint the outline with the activity's color", "A thin colored ring around the pill.", () => _s.AccentBorder, v => _s.AccentBorder = v);
     }
 
     void BuildBehavior()
@@ -528,18 +716,31 @@ public partial class SettingsWindow : Window
         SliderCard("Close delay", "How long it stays open after the mouse leaves.", 0, 2000, 20, () => _s.CollapseDelayMs, v => _s.CollapseDelayMs = (int)v, Ms);
         Toggle("Clicking the open island opens the activity", "The game page, the downloaded file, the notification's link…", () => _s.ClickOpensActivity, v => _s.ClickOpensActivity = v);
         Toggle("Scroll on the island to switch activities", null, () => _s.ScrollToSwitch, v => _s.ScrollToSwitch = v);
+        Toggle("Scroll on an open music or volume card to change the volume", null, () => _s.ScrollAdjustsVolume, v => _s.ScrollAdjustsVolume = v);
+        Toggle("Click the progress bar to jump", "Seek in a song, or set the volume.", () => _s.ClickToSeek, v => _s.ClickToSeek = v);
 
         Section("Peek", "A peek is when the island opens by itself for a moment because something happened.");
         Toggle("Peek when something new happens", "Fine-tune per activity type and per app on the Activities and Apps pages.", () => _s.PeekOnNewActivity, v => _s.PeekOnNewActivity = v);
+        Card("Peek style", "Bump shows the new thing in the pill with a little pulse, without opening.",
+            Combo(new[] { ("Open the island", "expand"), ("Bump", "bump") }, () => _s.PeekStyle, v => _s.PeekStyle = v), indent: 24);
         SliderCard("Peek length", null, 1.5, 12, 0.5, () => _s.PeekSeconds, v => _s.PeekSeconds = v, Secs, 24);
 
         Section("Hiding");
         Toggle("Hide while a game or video is fullscreen", null, () => _s.HideInFullscreen, v => _s.HideInFullscreen = v);
+        Card("Hide while these apps are in front", "Program names, comma-separated \u2014 e.g. obs64, Photoshop, VALORANT. Find them in Task Manager \u203A Details.",
+            Text(() => string.Join(", ", _s.HideForApps), v => _s.HideForApps = SplitList(v), 260));
 
         Section("Motion");
         SliderCard("Animation speed", null, 0.5, 2.5, 0.05, () => _s.AnimationSpeed, v => _s.AnimationSpeed = v, Times);
         SliderCard("Springiness", "How much it overshoots when opening. 0 = no bounce.", 0, 0.8, 0.02, () => _s.Springiness, v => _s.Springiness = v, Pct);
-        Toggle("Reduce motion", "Quick fades instead of springs; the visualizer stops moving.", () => _s.ReduceMotion, v => _s.ReduceMotion = v);
+        Toggle("Reduce motion", "Quick fades instead of springs.", () => _s.ReduceMotion, v => _s.ReduceMotion = v);
+
+        Section("Performance");
+        int hz = Native.RefreshRate(null);
+        Card("Animation frame rate", $"Match your display ({hz} Hz) for the smoothest motion, or cap it to save power.",
+            Combo(new[] { ($"Match the display ({hz} Hz)", "0"), ("120 fps", "120"), ("60 fps", "60"), ("30 fps (battery saver)", "30") },
+                () => _s.FrameRate.ToString(), v => _s.FrameRate = int.TryParse(v, out var f) ? f : 0));
+        Toggle("Give unused memory back to Windows", "After 30 quiet seconds. Keeps Isle's footprint small; costs nothing noticeable.", () => _s.TrimMemory, v => _s.TrimMemory = v);
     }
 
     void BuildActivities()
@@ -563,6 +764,7 @@ public partial class SettingsWindow : Window
         KindBlock("notification", "Windows notifications", "Experimental. Windows may refuse access to apps that aren't from the Store; your own apps can always notify through the local API.");
         KindBlock("sports", "Live sports", "Scores for your teams. Set leagues and teams on the Live sports page.");
         KindBlock("custom", "From your apps", "Activities that Amplite-style integrations, Savor, Fullcourt or scripts post through the local API.");
+        KindBlock("system", "System", "Volume, battery, Caps Lock, screenshots and clipboard. Pick which on the System page.");
         KindBlock("update", "Isle updates", "The card that offers a new version of Isle.");
     }
 
@@ -741,6 +943,114 @@ public partial class SettingsWindow : Window
         Card("Documentation", null, Btn("Open API docs", () => Ui.OpenUrl($"https://github.com/{UpdateService.Repo}/blob/main/docs/integration.md"), Glyphs.Open));
     }
 
+    void BuildSystem()
+    {
+        Page.Children.Add(Hint("Little system moments, shown the way the island does everything else. Turn the whole type off on the Activities page.", new Thickness(0, 0, 0, 6)));
+
+        Section("Volume");
+        Toggle("Show volume changes", "A slim volume pill when you change the volume or mute. Scroll on it, or click the bar, to adjust.", () => _s.VolumeHud, v => _s.VolumeHud = v);
+
+        Section("Keyboard");
+        Toggle("Caps Lock and Num Lock", "Shows when either one turns on or off.", () => _s.LockKeys, v => _s.LockKeys = v);
+
+        Section("Battery", "Only on PCs with a battery.");
+        Toggle("Charging and low-battery alerts", null, () => _s.BatteryAlerts, v => _s.BatteryAlerts = v);
+        SliderCard("Warn me at", null, 5, 50, 5, () => _s.BatteryLowPercent, v => _s.BatteryLowPercent = (int)v, v => $"{v:0}%", 24);
+
+        Section("Screenshots");
+        Toggle("Show new screenshots", "Print Screen and Snipping Tool save to Pictures \u203A Screenshots. Open, copy or find them from the island.", () => _s.Screenshots, v => _s.Screenshots = v);
+
+        Section("Clipboard");
+        Toggle("Flash when something is copied", null, () => _s.ClipboardFlash, v => _s.ClipboardFlash = v, after: Rebuild);
+        if (_s.ClipboardFlash)
+            Toggle("Show what was copied", "Off: just the length. Careful with passwords.", () => _s.ClipboardShowText, v => _s.ClipboardShowText = v, 24);
+    }
+
+    void BuildTimers()
+    {
+        Section("Alarm");
+        var sounds = new List<(string, string)> { ("Windows default", "system") };
+        sounds.AddRange(TimerService.WindowsSounds().Select(n => (n, n)));
+        sounds.Add(("No sound", "none"));
+        if (File.Exists(_s.TimerSound)) sounds.Add((Path.GetFileName(_s.TimerSound), _s.TimerSound));
+        Card("Sound", "When a timer or focus round ends.", Row(
+            Combo(sounds, () => _s.TimerSound, v => _s.TimerSound = v, Rebuild, 200),
+            Btn("Test", () => App.Instance.Timers.PlaySound(_s.TimerSound), Glyphs.Play),
+            Btn("Choose file\u2026", () =>
+            {
+                var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "Sounds (*.wav)|*.wav", Title = "Pick a sound" };
+                if (dlg.ShowDialog(this) == true) { _s.TimerSound = dlg.FileName; Changed(); Rebuild(); }
+            })));
+        SliderCard("Play it", null, 1, 10, 1, () => _s.TimerSoundRepeats, v => _s.TimerSoundRepeats = (int)v, v => v == 1 ? "once" : $"{v:0} times");
+
+        Section("Focus sessions", "Work in focused rounds with breaks in between. Start one from the open idle island, the tray or right-click menu.");
+        SliderCard("Focus", null, 5, 120, 5, () => _s.FocusMinutes, v => _s.FocusMinutes = (int)v, v => $"{v:0} min");
+        SliderCard("Short break", null, 1, 30, 1, () => _s.BreakMinutes, v => _s.BreakMinutes = (int)v, v => $"{v:0} min");
+        SliderCard("Long break", null, 5, 60, 5, () => _s.LongBreakMinutes, v => _s.LongBreakMinutes = (int)v, v => $"{v:0} min");
+        SliderCard("Long break after", null, 2, 8, 1, () => _s.FocusRounds, v => _s.FocusRounds = (int)v, v => $"{v:0} rounds");
+        Toggle("Start the next round automatically", "Off: the island asks before each break and round.", () => _s.FocusAutoStartBreaks, v => _s.FocusAutoStartBreaks = v);
+        Toggle("Do not disturb while focusing", "Nothing peeks during focus rounds (calls still can, if allowed on the General page).", () => _s.FocusDndDuringFocus, v => _s.FocusDndDuringFocus = v);
+        Card("Start now", null, Row(
+            Btn("Focus session", () => App.Instance.Timers.StartFocus(), Glyphs.Play),
+            Btn("Stopwatch", () => App.Instance.Timers.ToggleStopwatch(), Glyphs.Timer)));
+
+        Section("From anywhere", "Run Isle.exe with a command \u2014 handy for shortcuts, Stream Deck or a keyboard knob.");
+        var cmds = new TextBox
+        {
+            IsReadOnly = true,
+            TextWrapping = TextWrapping.Wrap,
+            FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+            FontSize = 12,
+            Text = "Isle.exe --timer 10m --label \"Tea\"\nIsle.exe --stopwatch\nIsle.exe --focus\nIsle.exe --toggle-hide\nIsle.exe --dnd toggle\nIsle.exe --settings System",
+        };
+        Card("Commands", "Running Isle.exe again with no command opens Settings.", null, cmds);
+    }
+
+    static readonly System.Text.Json.JsonSerializerOptions ExportJson = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
+
+    sealed class Backup
+    {
+        public string App { get; set; } = "Isle";
+        public string Version { get; set; } = AppInfo.VersionString;
+        public AppSettings? Settings { get; set; }
+        public List<AppRule>? Apps { get; set; }
+    }
+
+    void ExportSettings()
+    {
+        var dlg = new Microsoft.Win32.SaveFileDialog { FileName = "Isle settings.json", Filter = "Isle settings (*.json)|*.json" };
+        if (dlg.ShowDialog(this) != true) return;
+        try
+        {
+            var b = new Backup { Settings = _s.Clone(), Apps = AppRegistry.All.ToList() };
+            File.WriteAllText(dlg.FileName, System.Text.Json.JsonSerializer.Serialize(b, ExportJson));
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Couldn't save: " + ex.Message, "Isle");
+        }
+    }
+
+    void ImportSettings()
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "Isle settings (*.json)|*.json" };
+        if (dlg.ShowDialog(this) != true) return;
+        try
+        {
+            var b = System.Text.Json.JsonSerializer.Deserialize<Backup>(File.ReadAllText(dlg.FileName), ExportJson);
+            if (b?.Settings == null) throw new InvalidDataException("That file doesn't have Isle settings in it.");
+            foreach (var r in b.Apps ?? new()) if (r.Key.Length > 0) AppRegistry.Update(r);
+            _apply.Stop();
+            App.Instance.ApplySettings(b.Settings);
+            Close();
+            App.Instance.ShowSettings();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Couldn't import: " + ex.Message, "Isle");
+        }
+    }
+
     void BuildAbout()
     {
         Section("Updates");
@@ -753,6 +1063,28 @@ public partial class SettingsWindow : Window
         Card("Settings and log", Paths.DataDir, Row(
             Btn("Open folder", () => Ui.OpenUrl(Paths.DataDir), Glyphs.Folder),
             Btn("Open log", () => Ui.OpenUrl(File.Exists(Paths.LogFile) ? Paths.LogFile : Paths.DataDir))));
+
+        Card("Back up or move your setup", "Saves settings and your app choices to one file.", Row(
+            Btn("Export\u2026", ExportSettings, "\uEDE1"),
+            Btn("Import\u2026", ImportSettings, "\uE8B5")));
+
+        Section("Diagnostics");
+        var stats = new TextBlock { FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 12, TextWrapping = TextWrapping.Wrap };
+        void Stats()
+        {
+            using var p = System.Diagnostics.Process.GetCurrentProcess();
+            var up = DateTime.Now - p.StartTime;
+            stats.Text =
+                $"Memory in use   {Fmt.Bytes(p.WorkingSet64)}  (private {Fmt.Bytes(p.PrivateMemorySize64)})\n" +
+                $"CPU time        {p.TotalProcessorTime.TotalSeconds:0.0} s over {Fmt.Human(up)}\n" +
+                $"Activities      {App.Instance.Hub.Items.Count} showing, {App.Instance.Hub.All.Count} live\n" +
+                $"Frame rate      {(_s.FrameRate > 0 ? _s.FrameRate + " fps" : $"display ({Native.RefreshRate(null)} Hz)")}\n" +
+                $"Local API       {(_s.ApiEnabled ? $"127.0.0.1:{_s.ApiPort}" : "off")}\n" +
+                $"Amplite         {(AmpliteService.IsConnected ? "connected " + AmpliteService.Version : "not running")}\n" +
+                $"Fullcourt app   {(FullcourtLink.AppPath != null ? "installed" : "not installed")}";
+        }
+        Stats();
+        Card("Right now", null, Btn("Refresh", Stats, Glyphs.Refresh), stats);
 
         Section("Reset");
         Card("Restore default settings", "Keeps your app list; resets everything else.", Btn("Restore defaults", () =>

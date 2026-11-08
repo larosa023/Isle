@@ -63,8 +63,13 @@
                     <TextBlock x:Name="VersionText" FontSize="12" Opacity="0.6"/>
                 </StackPanel>
             </StackPanel>
-            <TextBlock DockPanel.Dock="Bottom" Margin="12,12,8,0" FontSize="11.5" Opacity="0.6" TextWrapping="Wrap"
-                       Text="Changes apply instantly."/>
+            <TextBox x:Name="SearchBox" DockPanel.Dock="Top" Margin="4,0,4,12" TextChanged="Search_TextChanged"
+                     ToolTip="Search every setting (Ctrl+F)"/>
+            <StackPanel DockPanel.Dock="Bottom" Margin="4,12,4,0">
+                <Button x:Name="PreviewButton" HorizontalAlignment="Stretch" Padding="10,6" Click="Preview_Click"
+                        ToolTip="Puts a sample card on the island so you can see your changes"/>
+                <TextBlock Margin="8,10,8,0" FontSize="11.5" Opacity="0.6" TextWrapping="Wrap" Text="Changes apply instantly."/>
+            </StackPanel>
             <ListBox x:Name="Nav" BorderThickness="0" Background="Transparent"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="Nav_SelectionChanged"/>
         </DockPanel>

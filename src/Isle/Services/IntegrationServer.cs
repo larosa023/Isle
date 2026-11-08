@@ -278,6 +278,20 @@ public sealed class IntegrationServer : IModule
             return new Response(200, list);
         }
 
+        // Same commands as the command line: {"cmd": "--timer 5m --label Tea"} or {"cmd": "toggle-hide"}
+        if (method == "POST" && path == "/v1/command")
+        {
+            using var doc = JsonDocument.Parse(req.Body.Length == 0 ? "{}"u8.ToArray() : req.Body);
+            var cmd = doc.RootElement.TryGetProperty("cmd", out var c) ? c.GetString() ?? "" : "";
+            if (fromBrowser && cmd.Contains("quit", StringComparison.OrdinalIgnoreCase))
+                return new Response(403, new { error = "websites can't quit Isle" });
+            var args = SplitArgs(cmd);
+            if (args.Count == 0) return new Response(400, new { error = "cmd is required" });
+            if (!args[0].StartsWith("--")) args[0] = "--" + args[0];
+            var result = await Ui.InvokeAsync(() => App.Instance.HandleCommand(args)).ConfigureAwait(false);
+            return result == "ok" ? new Response(200, new { ok = true }) : new Response(400, new { error = result });
+        }
+
         if (method == "POST" && path == "/v1/timers")
         {
             var dto = JsonSerializer.Deserialize<TimerDto>(req.Body, Json) ?? new TimerDto();
@@ -288,6 +302,15 @@ public sealed class IntegrationServer : IModule
         }
 
         return new Response(404, new { error = "not found" });
+    }
+
+    /// <summary>Splits a command line, keeping "quoted words" together.</summary>
+    static List<string> SplitArgs(string text)
+    {
+        var list = new List<string>();
+        foreach (Match m in Regex.Matches(text, "\"([^\"]*)\"|(\\S+)"))
+            list.Add(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value);
+        return list;
     }
 
     static string Slug(string s) => Regex.Replace(s.Trim().ToLowerInvariant(), "[^a-z0-9._-]+", "-");

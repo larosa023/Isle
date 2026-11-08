@@ -38,9 +38,13 @@ public sealed class AppSettings
     public double BorderThickness { get; set; } = 1;
     public string FontFamily { get; set; } = "";               // empty = Segoe UI Variable
     public bool AnimatedVisualizer { get; set; } = true;
+    public string VisualizerMode { get; set; } = "real";       // real (follows the sound) | animated | off
+    public bool ArtworkGlow { get; set; } = true;              // soft album-art color behind the open music card
+    public double GlowStrength { get; set; } = 0.35;
+    public bool AccentBorder { get; set; }                     // tint the pill's outline with the activity's color
 
     // ── Island shape & placement ──
-    public string Monitor { get; set; } = "";                  // device name, empty = primary
+    public string Monitor { get; set; } = "";                  // device name, "" = main display, "follow" = active window's display
     public string Align { get; set; } = "center";              // left | center | right
     public double OffsetX { get; set; }
     public double TopOffset { get; set; } = 6;
@@ -66,6 +70,9 @@ public sealed class AppSettings
     public bool IdleShowClock { get; set; }
     public bool HideWhenIdle { get; set; }
     public List<int> QuickTimers { get; set; } = new() { 1, 5, 10, 25 };
+    public bool CompanionBubble { get; set; } = true;          // second live activity as a small bubble beside the pill
+    public bool IdleShowWeather { get; set; } = true;
+    public bool IdleShowQuickActions { get; set; } = true;     // stopwatch and focus buttons on the open idle island
 
     // ── Behavior & motion ──
     public bool HoverToExpand { get; set; } = true;
@@ -74,11 +81,18 @@ public sealed class AppSettings
     public bool ClickOpensActivity { get; set; } = true;
     public bool ScrollToSwitch { get; set; } = true;
     public bool PeekOnNewActivity { get; set; } = true;
+    public string PeekStyle { get; set; } = "expand";          // expand | bump (pill pulses and shows it, without opening)
+    public bool ScrollAdjustsVolume { get; set; } = true;      // scrolling an open music or volume card changes volume
+    public bool ClickToSeek { get; set; } = true;
+    public string MaximizedBehavior { get; set; } = "stay";    // stay | hideidle (idle pill steps aside over maximized windows)
+    public List<string> HideForApps { get; set; } = new();     // process names, e.g. "obs64", "valorant"
     public double PeekSeconds { get; set; } = 3.5;
     public bool HideInFullscreen { get; set; } = true;
     public double AnimationSpeed { get; set; } = 1.0;
     public double Springiness { get; set; } = 0.22;
     public bool ReduceMotion { get; set; }
+    public int FrameRate { get; set; }                          // 0 = match the display (e.g. 144 Hz), else a cap
+    public bool TrimMemory { get; set; } = true;               // hand unused memory back to Windows while idle
     public string Hotkey { get; set; } = "Ctrl+Alt+I";
     public string HideHotkey { get; set; } = "Ctrl+Alt+H";
     public bool StartWithWindows { get; set; }
@@ -95,7 +109,34 @@ public sealed class AppSettings
     {
         ["media"] = new(), ["timer"] = new(), ["download"] = new(), ["call"] = new(),
         ["notification"] = new() { Enabled = false }, ["sports"] = new(), ["update"] = new(), ["custom"] = new(),
+        ["system"] = new(),
     };
+
+    // System
+    public bool VolumeHud { get; set; } = true;
+    public bool BatteryAlerts { get; set; } = true;
+    public int BatteryLowPercent { get; set; } = 20;
+    public bool LockKeys { get; set; } = true;
+    public bool Screenshots { get; set; } = true;
+    public bool ClipboardFlash { get; set; }
+    public bool ClipboardShowText { get; set; }
+
+    // Timers & focus
+    public string TimerSound { get; set; } = "Alarm01";         // a Windows sound (C:\Windows\Media), a .wav path, "system" or "none"
+    public int TimerSoundRepeats { get; set; } = 3;
+    public int FocusMinutes { get; set; } = 25;
+    public int BreakMinutes { get; set; } = 5;
+    public int LongBreakMinutes { get; set; } = 15;
+    public int FocusRounds { get; set; } = 4;
+    public bool FocusAutoStartBreaks { get; set; } = true;
+    public bool FocusDndDuringFocus { get; set; }
+
+    // Weather (Open-Meteo; no account)
+    public string WeatherLocation { get; set; } = "";
+    public string WeatherPlace { get; set; } = "";
+    public double WeatherLat { get; set; }
+    public double WeatherLon { get; set; }
+    public string WeatherUnits { get; set; } = "auto";         // auto | f | c
 
     // Now playing
     public bool MediaPeekOnTrackChange { get; set; }
@@ -143,6 +184,11 @@ public sealed class AppSettings
             if (HoverDelayMs == 120) HoverDelayMs = 200; // 0.4: a hair longer so passing over it doesn't open it
             SettingsVersion = 2;
         }
+        if (SettingsVersion < 3)
+        {
+            if (!AnimatedVisualizer) VisualizerMode = "off"; // 0.5: the on/off switch became a style choice
+            SettingsVersion = 3;
+        }
     }
 
     public KindRule Kind(ActivityKind kind) => Kind(KindKey(kind));
@@ -172,8 +218,9 @@ public sealed class AppSettings
     public string ModuleSignature() => JsonSerializer.Serialize(new
     {
         media = Kind("media").Enabled, download = Kind("download").Enabled, call = Kind("call").Enabled,
-        notification = Kind("notification").Enabled, sports = Kind("sports").Enabled,
+        notification = Kind("notification").Enabled, sports = Kind("sports").Enabled, system = Kind("system").Enabled,
         DownloadsFolder, ApiEnabled, ApiPort, AmpliteEnabled,
+        VolumeHud, BatteryAlerts, LockKeys, Screenshots, ClipboardFlash, WeatherLat, WeatherLon, WeatherUnits,
     });
 
     static readonly JsonSerializerOptions Options = new()

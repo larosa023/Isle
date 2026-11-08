@@ -164,6 +164,8 @@ public sealed class AmpliteService : IModule
         {
             x.Glyph = Glyphs.Music;
             x.AppKey = AppKey;
+            x.OnScroll = d => Command(d > 0 ? "vol:+4" : "vol:-4");
+            x.Seek = SeekTo;
         });
 
         a.Title = s.Title;
@@ -243,6 +245,20 @@ public sealed class AmpliteService : IModule
             list.Add(new IslandAction("", "EQ", menu));
         }
         a.Actions = list;
+    }
+
+    void SeekTo(double fraction)
+    {
+        var s = _now;
+        if (s == null || s.DurationMs < 1000) return;
+        double pos = s.PositionMs + (s.Playing ? (DateTime.UtcNow - _receivedAt).TotalMilliseconds : 0);
+        long delta = (long)Math.Round(Math.Clamp(fraction, 0, 1) * s.DurationMs - pos);
+        if (Math.Abs(delta) < 500) return;
+        delta = Math.Clamp(delta, -9_999_999, 9_999_999);
+        Command(delta >= 0 ? $"seek:+{delta}" : $"seek:{delta}");
+        // reflect it immediately; the next poll confirms
+        _now = s with { PositionMs = s.PositionMs + delta };
+        RenderProgress();
     }
 
     void RenderProgress()

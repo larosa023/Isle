@@ -214,6 +214,22 @@ public static class Images
         }
     }
 
+    /// <summary>A 5×5 copy of the artwork; stretched with smooth scaling it becomes a soft color wash.</summary>
+    public static BitmapSource? Glow(BitmapSource src)
+    {
+        try
+        {
+            var small = new TransformedBitmap(src, new ScaleTransform(5.0 / src.PixelWidth, 5.0 / src.PixelHeight));
+            var copy = new WriteableBitmap(new FormatConvertedBitmap(small, PixelFormats.Bgra32, null, 0));
+            copy.Freeze();
+            return copy;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>A vivid, readable accent sampled from artwork.</summary>
     public static Color? Dominant(BitmapSource src)
     {
