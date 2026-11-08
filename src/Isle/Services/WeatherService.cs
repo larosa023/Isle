@@ -63,10 +63,8 @@ public sealed class WeatherService : IModule
     static async Task<Now?> FetchAsync(double lat, double lon, string place, CancellationToken ct)
     {
         bool f = Fahrenheit;
-        var url = string.Create(CultureInfo.InvariantCulture,
-            $"https://api.open-meteo.com/v1/forecast?latitude={lat:0.####}&longitude={lon:0.####}" +
-            $"&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min&forecast_days=1&timezone=auto" +
-            (f ? "&temperature_unit=fahrenheit" : ""));
+        var url = FormattableString.Invariant(
+            $"https://api.open-meteo.com/v1/forecast?latitude={lat:0.####}&longitude={lon:0.####}&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min&forecast_days=1&timezone=auto{(f ? "&temperature_unit=fahrenheit" : "")}");
         var json = await Http.GetStringAsync(url, TimeSpan.FromSeconds(15), ct).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
         var r = doc.RootElement;
