@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Diagnostics;
+using Process = System.Diagnostics.Process;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
