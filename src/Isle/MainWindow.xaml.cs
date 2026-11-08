@@ -41,6 +41,7 @@ public partial class MainWindow : Window
     bool _fullscreenHidden, _userHidden, _appHidden, _overMaximized;
     bool _hotkeyRegistered, _hideHotkeyRegistered, _clipboardListening, _accentBorder;
     double _glowTarget;
+    int _guardTicks;
     (double w, double h, double o) _target = (-1, -1, -1);
     int _fps = 60;
     string? _screenName;
@@ -777,11 +778,16 @@ public partial class MainWindow : Window
 
         if (IsVisible)
         {
-            // Some shell surfaces (taskbar, Start) can climb over topmost windows; reassert.
-            Native.SetWindowPos(_hwnd, Native.HWND_TOPMOST, 0, 0, 0, 0,
-                Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | Native.SWP_NOOWNERZORDER);
+            // Some shell surfaces (taskbar, Start) can climb over topmost windows; reassert now and then.
+            if (++_guardTicks % 3 == 0)
+                Native.SetWindowPos(_hwnd, Native.HWND_TOPMOST, 0, 0, 0, 0,
+                    Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | Native.SWP_NOOWNERZORDER);
             if (_hub.Current == null && (_expanded || _s.IdleShowClock)) UpdateClock();
         }
+
+        // Don't let a short-lived card (volume, caps lock…) vanish while you're hovering it.
+        if (_expanded && _hover && _hub.Current is { IsTransient: true, ExpiresAt: not null } t)
+            t.ExpiresAt = DateTime.UtcNow.AddSeconds(2);
 
         // After a quiet spell, hand unused memory back to Windows.
         var now = DateTime.UtcNow;

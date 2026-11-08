@@ -2,17 +2,20 @@
 
 **A Dynamic Island for Windows.** A small pill at the top of your screen that stays out of the way, then springs open to show what's happening right now — music, timers, downloads, calls, notifications and live scores.
 
-- **Now playing** — album art, live progress and prev / play / next for anything that uses Windows media controls (Spotify, Apple Music, YouTube in any browser, Media Player…). The accent color is sampled from the artwork.
-- **Timers** — start from the island (hover it when idle), right-click, the tray, or the API. Pause, +1 min, and a chime when done.
+- **Now playing** — album art, live progress and prev / play / next for anything that uses Windows media controls (Spotify, Apple Music, YouTube in any browser, Media Player…). Click the progress bar to jump, scroll the open card to change the volume. The visualizer follows what your speakers are actually playing, and the album art softly tints the open card.
+- **Timers, stopwatch & focus** — timers from the island, right-click, the tray, the command line or the API (pause, +1 min, *Again*), a stopwatch with laps, and focus sessions (focus / short break / long break rounds, optional Do not disturb). Pick any Windows alarm sound or your own .wav.
 - **Downloads** — live size and speed for Chrome, Edge, Firefox, Brave and Opera downloads, then *Open* / *Show in folder*. No extension needed.
 - **Calls** — Teams, Discord, Zoom, Slack, Phone Link, WhatsApp, Meet in a browser… detected from microphone use, with a running call timer. Optional mic-in-use indicator for every other app.
 - **Live sports + Fullcourt** — your teams' scores from ESPN (NBA, WNBA, NFL, NCAA, MLB, NHL, MLS, EPL, LaLiga, UCL), with a peek on finals and score changes. Isle follows the favorite teams you pick in **Fullcourt**, tracks any game you send with Fullcourt's **Show on Isle** button, and opens games in the Fullcourt app (or the Fullcourt site on GitHub Pages if the app isn't installed).
+- **System moments** — a slim volume pill when you change or mute the volume, Caps Lock / Num Lock, charging and low battery, new screenshots (open, copy, show in folder), and an opt-in "copied" flash.
+- **Weather & clock** — the open idle island shows the time, date and current weather (Open-Meteo, no account); the idle pill can show the time and temperature.
+- **Two things at once** — when two activities are live, the second sits in a small bubble beside the pill. Click it to switch.
 - **Notifications** — mirrors Windows toasts (experimental — see below), and your own apps can push notifications through the local API.
 - **Amplite built in** — Isle talks to Amplite's local API: cover, song, live progress, prev / play / next, **Like**, and an **EQ preset picker** right on the island. No setup; it just appears while Amplite is running, and replaces the duplicate Spotify card.
 - **You decide what shows** — every app Isle detects (players, call apps, notification senders, browsers, API clients) gets its own *show*, *peek* and *priority* setting on the **Apps** page, or right-click the island → *Hide this app*.
 - **Built for your other apps** — a tiny local API lets **Savor**, **Fullcourt** or any script put live activities on the island. → [docs/integration.md](docs/integration.md)
-- **Themeable** — Midnight (true black), Graphite, Glass, Frost (light) or fully custom colors; fixed or automatic accent; size and position.
-- **Light** — no web view, no background services. Animations run only while something is moving and stop when hidden; it hides itself over fullscreen games and video.
+- **Deeply customizable** — Midnight (true black), Graphite, Glass, Frost (light) or custom colors; content-matched or fixed accent; accent outline; size, shape and placement of every state; what each state shows; motion speed and springiness; peek style; frame rate. Settings has search (**Ctrl+F**) and export / import.
+- **Light and smooth** — no web view, no background services. Animations run at your display's refresh rate (e.g. 144 Hz) and only while something is moving; Isle hands unused memory back to Windows when idle and hides over fullscreen games and video, or over apps you list.
 - **Built-in updater** — checks GitHub Releases, verifies the download's SHA-256, swaps itself and restarts. No installer, no admin.
 
 ## Install
@@ -32,12 +35,27 @@ Requires Windows 10 (2004 / build 19041) or Windows 11.
 | | |
 |---|---|
 | **Hover** | Expand (or click, if you turned hover off) |
-| **Scroll** on the island | Flip between activities when several are live |
+| **Scroll** on the island | Flip between activities; on an open music or volume card, change the volume |
+| **Click** the progress bar | Jump to that point in the song (or set the volume) |
+| **Click** the bubble | Switch to the second activity |
 | **Click** the expanded island | Open the activity (the game page, the downloaded file…) |
 | **Right-click** | New timer, hide this app, Do not disturb, settings, updates, hide for an hour, quit |
 | **Ctrl+Alt+I** | Open / close the island |
 | **Ctrl+Alt+H** | Hide / show the island completely (both shortcuts are in Settings → General) |
 | **Tray icon** | Same menu; left-click opens Settings |
+| **Run Isle.exe again** | Opens Settings (or runs a command, below) |
+
+### Commands
+
+Run `Isle.exe` with a command while Isle is running — handy for desktop shortcuts, Stream Deck, AutoHotkey or a keyboard knob:
+
+```
+Isle.exe --timer 10m --label "Tea"     Isle.exe --stopwatch      Isle.exe --focus
+Isle.exe --toggle                      Isle.exe --toggle-hide    Isle.exe --dnd toggle
+Isle.exe --settings System             Isle.exe --preview        Isle.exe --quit
+```
+
+Durations: `90s`, `5m`, `1h30m`, `1:30`, or a plain number of minutes. Apps can send the same commands to `POST /v1/command`.
 
 ### Settings
 
@@ -46,10 +64,12 @@ Open from the tray icon or right-click → *Settings…*. Changes apply instantl
 - **Island** — which display, left / center / right, offsets, size, idle / compact / expanded dimensions, corner roundness, and exactly which parts show in the compact pill and the expanded island; clock in the idle pill; your own quick-timer buttons.
 - **Appearance** — themes or custom colors, accent (from the content, or fixed), opacity, border, font, visualizer.
 - **Behavior & motion** — hover vs click, hover and close delays, click and scroll behavior, peeks, fullscreen hiding, animation speed, springiness, reduce motion.
-- **Activities** — per type (music, timers, downloads, calls, notifications, sports, your apps, updates): show, peek, priority.
+- **Activities** — per type (music, timers, downloads, calls, notifications, sports, system, your apps, updates): show, peek, priority.
+- **System** — volume pill, lock keys, battery alerts and threshold, screenshots, clipboard flash.
+- **Timers & focus** — alarm sound and repeats, focus / break lengths, rounds, auto-start, Do not disturb while focusing.
 - **Apps** — every detected app with show, peek, priority, forget.
 - **General** — start with Windows, Do not disturb, quiet hours (calls and finished timers can still alert), a global shortcut (default **Ctrl+Alt+I**).
-- **Amplite**, **Live sports**, **Integrations**, **About & updates**.
+- **Amplite**, **Live sports**, **Integrations**, **About & updates** (export / import, diagnostics: memory, CPU time, connections).
 
 Settings are saved to `%APPDATA%\Isle\settings.json` (per-app choices in `apps.json`) (log: `isle.log` in the same folder). The custom theme's colors live in that file under `customTheme`.
 

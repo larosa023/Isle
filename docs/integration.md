@@ -19,6 +19,7 @@ Isle listens on **`http://127.0.0.1:47820`** (port configurable in Settings → 
 | `DELETE` | `/v1/activities/{app}/{id}` | Remove one. |
 | `POST` | `/v1/notify` | One-off notification that peeks for a few seconds. |
 | `POST` | `/v1/timers` | Start an Isle timer: `{ "minutes": 12, "label": "Pasta" }`. |
+| `POST` | `/v1/command` | Same commands as the command line: `{ "cmd": "--timer 5m --label Tea" }`, `{ "cmd": "toggle-hide" }`, `{ "cmd": "focus" }`. |
 | `POST` | `/v1/fullcourt/sync` | Fullcourt: `{ "league": "nba", "favorite": { "abbr": "NY", "name": "Knicks" } }` (`favorite: null` clears it). |
 | `POST` | `/v1/fullcourt/track` | Fullcourt: `{ "league": "nba", "game": "401…", "on": true }` — track one game until it ends. |
 | `GET` | `/v1/fullcourt/track` | Games currently tracked from Fullcourt. |
