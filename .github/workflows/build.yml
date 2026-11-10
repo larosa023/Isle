@@ -1,5 +1,9 @@
 name: build
 
+# Every push builds Isle. When the version in src/Isle/Isle.csproj (VersionPrefix) has no release yet,
+# a push to main publishes it automatically — bump the version, push, done. Publishing a release
+# on github.com by hand still works too (it builds that tag and attaches the files).
+
 on:
   push:
     branches: [main]
@@ -8,7 +12,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # needed to publish releases on tags
+  contents: write   # needed to publish releases
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -20,22 +28,45 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Decide version and whether to release
+        id: ver
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $version = $env:GITHUB_REF_NAME.TrimStart('v').Split('-')[0]
+            $tag = $env:GITHUB_REF_NAME
+            $release = 'true'
+          } else {
+            $version = ([xml](Get-Content src/Isle/Isle.csproj)).Project.PropertyGroup.VersionPrefix | Where-Object { $_ } | Select-Object -First 1
+            $tag = "v$version"
+            $release = 'false'
+            if ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF -eq 'refs/heads/main') {
+              gh release view $tag *> $null
+              if ($LASTEXITCODE -ne 0) { $release = 'true' }   # new version → publish it
+              $global:LASTEXITCODE = 0
+            }
+          }
+          Write-Host "Version $version, tag $tag, release: $release"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "release=$release" >> $env:GITHUB_OUTPUT
+
       - name: Publish
         shell: pwsh
         run: |
-          $common = @('src/Isle/Isle.csproj', '-c', 'Release', '-r', 'win-x64', '-p:PublishSingleFile=true', '-p:DebugType=none')
-          if ($env:GITHUB_REF -like 'refs/tags/v*') {
-            $version = $env:GITHUB_REF_NAME.TrimStart('v').Split('-')[0]
-            $common += "-p:VersionPrefix=$version"
-            Write-Host "Building version $version"
-          }
+          $common = @('src/Isle/Isle.csproj', '-c', 'Release', '-r', 'win-x64', '-p:PublishSingleFile=true', '-p:DebugType=none',
+                      "-p:VersionPrefix=${{ steps.ver.outputs.version }}")
 
           # Isle.exe — small; uses the shared .NET 10 Desktop Runtime (Windows offers to install it on first run).
+          # Precompiled (ReadyToRun) for a faster start; that only adds ~1 MB here.
           dotnet publish @common --self-contained false -o out/fd
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          # Isle-standalone.exe — bundles the runtime; no prerequisites.
-          dotnet publish @common --self-contained true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:IsleFlavor=standalone -o out/sc
+          # Isle-standalone.exe — bundles the runtime; no prerequisites. Not precompiled: in a standalone
+          # build that would cover the whole bundled runtime and add ~18 MB for a little startup speed.
+          dotnet publish @common --self-contained true -p:PublishReadyToRun=false -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:IsleFlavor=standalone -o out/sc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           New-Item -ItemType Directory -Force dist | Out-Null
@@ -54,17 +85,18 @@ jobs:
           path: dist/*
 
       - name: Publish GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.ver.outputs.release == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = $env:GITHUB_REF_NAME
+          $tag = '${{ steps.ver.outputs.tag }}'
           $files = @('dist/Isle.exe', 'dist/Isle-standalone.exe', 'dist/SHA256SUMS.txt')
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             # Release was created on github.com (which also created the tag): attach the builds.
             gh release upload $tag @files --clobber
           } else {
-            gh release create $tag @files --title "Isle $($tag.TrimStart('v'))" --generate-notes
+            # Creates the tag on this commit too.
+            gh release create $tag @files --target $env:GITHUB_SHA --title "Isle $($tag.TrimStart('v'))" --generate-notes
           }

@@ -99,12 +99,11 @@ Requires the .NET 10 SDK on Windows. Every push to `main` builds both flavors in
 
 ## Releasing (and how updates reach users)
 
-```bash
-git tag v0.2.0
-git push origin v0.2.0
-```
+Bump `VersionPrefix` in `src/Isle/Isle.csproj` and push to `main`. The workflow sees a version with no release yet, builds `Isle.exe`, `Isle-standalone.exe` and `SHA256SUMS.txt`, creates the `vX.Y.Z` tag and publishes the release with generated notes — no manual step. Pushes that don't change the version just build.
 
-The workflow builds `Isle.exe`, `Isle-standalone.exe` and `SHA256SUMS.txt`, stamps the version from the tag, and publishes a GitHub Release with generated notes. Running copies of Isle notice within 6 hours (or immediately via *Check for updates*), show an update card on the island, and install with one click. The version in the tag must be higher than the running one.
+(Publishing a release on github.com by hand, or pushing a `v*` tag, still works the same way.)
+
+Running copies of Isle notice within 6 hours (or immediately via *Check for updates*), show an update card on the island, and install with one click.
 
 ## Project layout
 
