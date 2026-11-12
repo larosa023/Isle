@@ -482,13 +482,22 @@ public sealed class DiscordService : IModule
         if (S.DiscordShowSpeaker && talking.Count > 0)
         {
             var lead = talking[0];
-            a.CompactText = talking.Count > 1 ? $"{lead.Name} +{talking.Count - 1}" : lead.Name;
+            a.CompactText = talking.Count switch
+            {
+                1 => lead.Name,
+                2 => $"{lead.Name}, {talking[1].Name}",
+                _ => $"{lead.Name} +{talking.Count - 1}",
+            };
             a.Image = _avatars.TryGetValue(lead.Id, out var img) && img != null ? img : _guildImage;
+            // Everyone talking, as overlapping pictures (up to 4).
+            a.Faces = talking.Select(m => _avatars.TryGetValue(m.Id, out var f) ? f : null)
+                             .OfType<ImageSource>().Take(4).ToList();
         }
         else
         {
             a.CompactText = null;
             a.Image = _guildImage;
+            a.Faces = Array.Empty<ImageSource>();
         }
 
         a.Accent = _selfMute || _selfDeaf ? Red : talking.Count > 0 || selfTalking ? Talking : Blurple;

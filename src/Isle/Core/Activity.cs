@@ -117,6 +117,24 @@ public sealed class Activity : INotifyPropertyChanged
     public ImageSource? GlowSource => _glow ??= _image is System.Windows.Media.Imaging.BitmapSource b ? Images.Glow(b) : null;
     public bool HasImage => _image != null;
 
+    /// <summary>Several small round pictures instead of one (e.g. everyone talking on Discord). Shown when 2+.</summary>
+    IReadOnlyList<ImageSource> _faces = Array.Empty<ImageSource>();
+    public IReadOnlyList<ImageSource> Faces
+    {
+        get => _faces;
+        set
+        {
+            value ??= Array.Empty<ImageSource>();
+            if (value.Count == _faces.Count && System.Linq.Enumerable.SequenceEqual(value, _faces)) return;
+            bool had = HasFaces;
+            _faces = value;
+            Raise(nameof(Faces));
+            if (had != HasFaces) { Raise(nameof(HasFaces)); Raise(nameof(ShowSingleArt)); }
+        }
+    }
+    public bool HasFaces => _faces.Count > 1;
+    public bool ShowSingleArt => !HasFaces;
+
     string _glyph = "";
     public string Glyph { get => _glyph; set { if (Set(ref _glyph, value ?? "")) Raise(nameof(ShowGlyph)); } }
     public bool ShowGlyph => _image == null && !string.IsNullOrEmpty(_glyph);

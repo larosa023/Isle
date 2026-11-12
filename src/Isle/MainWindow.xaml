@@ -83,7 +83,8 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <Grid x:Name="CompactArtHost" Width="22" Height="22" Margin="0,0,9,0" VerticalAlignment="Center">
+                    <Grid x:Name="CompactArtHost" Margin="0,0,9,0" VerticalAlignment="Center">
+                      <Grid Width="22" Height="22" Visibility="{Binding ShowSingleArt, Converter={StaticResource BoolToVis}}">
                         <Border CornerRadius="11" Background="{Binding AccentBrush}"
                                 Visibility="{Binding ShowGlyph, Converter={StaticResource BoolToVis}}">
                             <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource Icons}" FontSize="11"
@@ -94,6 +95,25 @@
                                 <ImageBrush ImageSource="{Binding Image}" Stretch="UniformToFill"/>
                             </Border.Background>
                         </Border>
+                      </Grid>
+                      <ItemsControl ItemsSource="{Binding Faces}" Focusable="False" Margin="7,-1,0,-1"
+                                      Visibility="{Binding HasFaces, Converter={StaticResource BoolToVis}}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Width="24" Height="24" CornerRadius="12.0" Margin="-8,0,0,0" BorderThickness="2"
+                                            BorderBrush="{DynamicResource Island.Background}">
+                                        <Border.Background>
+                                            <ImageBrush ImageSource="{Binding}" Stretch="UniformToFill"/>
+                                        </Border.Background>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </Grid>
 
                     <TextBlock x:Name="CompactTitle" Grid.Column="1" Text="{Binding CompactTitle}" FontSize="12.5" FontWeight="SemiBold"
@@ -169,6 +189,24 @@
                             <TextBlock Text="{Binding Subtitle}" FontSize="12.5" Style="{StaticResource Secondary}"
                                        TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxHeight="36" Margin="0,1,0,0"
                                        Visibility="{Binding HasSubtitle, Converter={StaticResource BoolToVis}}"/>
+                            <ItemsControl ItemsSource="{Binding Faces}" Focusable="False" Margin="7,6,0,0"
+                                      Visibility="{Binding HasFaces, Converter={StaticResource BoolToVis}}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Width="28" Height="28" CornerRadius="14.0" Margin="-7,0,0,0" BorderThickness="2"
+                                            BorderBrush="{DynamicResource Island.Background}">
+                                        <Border.Background>
+                                            <ImageBrush ImageSource="{Binding}" Stretch="UniformToFill"/>
+                                        </Border.Background>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                         </StackPanel>
 
                         <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0">

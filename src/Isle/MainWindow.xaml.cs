@@ -649,7 +649,7 @@ public partial class MainWindow : Window
     {
         if (!_expanded)
         {
-            if (_s.CompactAutoWidth && e.PropertyName is nameof(Activity.CompactTitle) or nameof(Activity.HasTrailing) or nameof(Activity.ShowVisualizer) or nameof(Activity.IsLive) or nameof(Activity.Trailing))
+            if (_s.CompactAutoWidth && e.PropertyName is nameof(Activity.CompactTitle) or nameof(Activity.HasFaces) or nameof(Activity.HasTrailing) or nameof(Activity.ShowVisualizer) or nameof(Activity.IsLive) or nameof(Activity.Trailing))
                 Dispatcher.InvokeAsync(Refresh, DispatcherPriority.Loaded);
             return;
         }
@@ -663,6 +663,7 @@ public partial class MainWindow : Window
             case nameof(Activity.HasSource):
             case nameof(Activity.GlowSource):
             case nameof(Activity.HasLyric):
+            case nameof(Activity.HasFaces):
                 Dispatcher.InvokeAsync(Refresh, DispatcherPriority.Loaded);
                 break;
             case nameof(Activity.Lyric):
