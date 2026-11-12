@@ -59,6 +59,7 @@ public partial class SettingsWindow : Window
             new("", "Timers & focus", BuildTimers),
             new("", "Apps", BuildApps),
             new("", "Amplite", BuildAmplite),
+            new("", "Discord", BuildDiscord),
             new("", "Live sports", BuildSports),
             new("", "Integrations", BuildIntegrations),
             new("", "About & updates", BuildAbout),
@@ -75,11 +76,13 @@ public partial class SettingsWindow : Window
         AppRegistry.Detected += OnAppsDetected;
         AmpliteService.StateChanged += OnAmpliteChanged;
         FullcourtLink.Changed += OnFullcourtChanged;
+        DiscordService.StatusChanged += OnDiscordChanged;
         Closed += (_, _) =>
         {
             AppRegistry.Detected -= OnAppsDetected;
             AmpliteService.StateChanged -= OnAmpliteChanged;
             FullcourtLink.Changed -= OnFullcourtChanged;
+            DiscordService.StatusChanged -= OnDiscordChanged;
             if (_apply.IsEnabled) { _apply.Stop(); App.Instance.ApplySettings(_s.Clone()); }
         };
 
@@ -154,6 +157,7 @@ public partial class SettingsWindow : Window
         }
 
         _ampliteStatus = null;
+        _discordStatus = null;
         _afterApply.Clear();
         Page.Children.Clear();
         Page.Children.Add(new TextBlock { Text = $"Results for \u201C{_query}\u201D", FontSize = 24, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) });
@@ -227,6 +231,7 @@ public partial class SettingsWindow : Window
         _current = p;
         _lastPage = p.Title;
         _ampliteStatus = null;
+        _discordStatus = null;
         _afterApply.Clear();
         Page.Children.Clear();
         Page.Children.Add(new TextBlock { Text = p.Title, FontSize = 28, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 14) });
@@ -751,6 +756,14 @@ public partial class SettingsWindow : Window
         {
             Toggle("Peek when the track changes", null, () => _s.MediaPeekOnTrackChange, v => _s.MediaPeekOnTrackChange = v, 24);
             SliderCard("Hide paused music after", "0 keeps it until the app closes.", 0, 120, 1, () => _s.MediaHidePausedAfterMinutes, v => _s.MediaHidePausedAfterMinutes = (int)v, v => v == 0 ? "Never" : $"{v:0} min", 24);
+            Toggle("Synced lyrics", "The current line on the open music card, in time with the song. Lyrics come from LRCLIB (free, no account); Isle sends it only the song's title, artist, album and length.",
+                () => _s.Lyrics, v => _s.Lyrics = v, 24, Rebuild);
+            if (_s.Lyrics)
+            {
+                Toggle("Lyrics in the pill too", "The line replaces the song title in the small pill.", () => _s.LyricsInCompact, v => _s.LyricsInCompact = v, 48);
+                SliderCard("Lyrics timing", "Nudge it if lines show too late (+) or too early (−).", -2000, 2000, 100,
+                    () => _s.LyricsOffsetMs, v => _s.LyricsOffsetMs = (int)v, v => v == 0 ? "In sync" : $"{(v > 0 ? "+" : "")}{v / 1000:0.0} s", 48);
+            }
         });
         KindBlock("timer", "Timers", "Countdowns from the island, tray menu or your apps.");
         KindBlock("download", "Downloads", "Live progress for browser downloads.", () =>
@@ -873,6 +886,68 @@ public partial class SettingsWindow : Window
             Btn("Vol −", () => AmpliteService.Command("vol:-10")),
             Btn("Vol +", () => AmpliteService.Command("vol:+10"))));
     }
+
+    TextBlock? _discordStatus;
+
+    void BuildDiscord()
+    {
+        Page.Children.Add(Hint("While you're in a voice channel, the island shows the channel, who's talking right now (their picture and name in the pill) and Mute / Deafen buttons that work on Discord itself. It talks to the Discord app on this PC.", new Thickness(0, 0, 0, 6)));
+
+        Toggle("Show Discord voice on the island", "Replaces the plain \"On a call\" card for Discord. Needs Calls turned on (Activities page).", () => _s.DiscordVoice, v => _s.DiscordVoice = v, after: Rebuild);
+        if (!_s.DiscordVoice) return;
+
+        _discordStatus = new TextBlock { FontSize = 13, TextWrapping = TextWrapping.Wrap, MaxWidth = 300, VerticalAlignment = VerticalAlignment.Center, Tag = DiscordService.SignedIn };
+        Card("Status", null, Row(_discordStatus,
+            Btn(DiscordService.SignedIn ? "Sign out" : "Connect", () =>
+            {
+                if (DiscordService.SignedIn) DiscordService.SignOut();
+                else DiscordService.RequestSignIn();
+            })));
+        UpdateDiscordStatus();
+
+        Section("Show");
+        Toggle("Who's talking in the pill", "Their picture and name replace the channel while they talk.", () => _s.DiscordShowSpeaker, v => _s.DiscordShowSpeaker = v);
+        Toggle("Peek when you join a channel", null, () => _s.DiscordPeekOnJoin, v => _s.DiscordPeekOnJoin = v);
+
+        Section("Your Discord application", "Discord only lets voice apps work for the people who made them, so Isle signs in with an app you own. One-time setup, about two minutes:");
+        Page.Children.Add(Hint(
+            "1. Open the Discord Developer Portal and click New Application (any name, e.g. \"Isle\").\n" +
+            "2. Go to OAuth2. Copy the Client ID and paste it below. Click Reset Secret, copy it and paste it below.\n" +
+            "3. Still on OAuth2, under Redirects add http://localhost and save.\n" +
+            "4. Press Connect above, then click Authorize in the Discord window that pops up.",
+            new Thickness(0, 0, 0, 8)));
+        Card("Developer Portal", null, Btn("Open", () => Ui.OpenUrl("https://discord.com/developers/applications"), Glyphs.Open));
+        Card("Application (client) ID", "A long number.", Text(() => _s.DiscordClientId, v => _s.DiscordClientId = new string(v.Where(char.IsDigit).ToArray()), 240));
+
+        var secret = new PasswordBox { Width = 240 };
+        bool hasSecret = DiscordTokens.Load().ClientSecret.Length > 0;
+        var secretNote = Hint(hasSecret ? "Saved (encrypted for your Windows account)." : "Not set.");
+        secret.PasswordChanged += (_, _) =>
+        {
+            if (secret.Password.Trim().Length == 0) return;
+            DiscordTokens.SetSecret(secret.Password);
+            secretNote.Text = "Saved (encrypted for your Windows account). Press Connect.";
+        };
+        var secretBox = new StackPanel();
+        secretBox.Children.Add(secret);
+        secretBox.Children.Add(secretNote);
+        Card("Client secret", "Stays on this PC and is never included when you export settings.", secretBox);
+    }
+
+    void UpdateDiscordStatus()
+    {
+        if (_discordStatus == null) return;
+        _discordStatus.Text = !_s.Kind("call").Enabled ? "Calls are turned off on the Activities page."
+            : DiscordService.Status == "Off" ? "Starting…" : DiscordService.Status;
+    }
+
+    void OnDiscordChanged() => Dispatcher.InvokeAsync(() =>
+    {
+        if (_current?.Title != "Discord" || _discordStatus == null) return;
+        // Signing in or out flips the button between Connect and Sign out.
+        if (_discordStatus.Tag is bool was && was != DiscordService.SignedIn) { Rebuild(); return; }
+        UpdateDiscordStatus();
+    });
 
     void UpdateAmpliteStatus()
     {

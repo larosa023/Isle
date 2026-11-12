@@ -2,11 +2,12 @@
 
 **A Dynamic Island for Windows.** A small pill at the top of your screen that stays out of the way, then springs open to show what's happening right now — music, timers, downloads, calls, notifications and live scores.
 
-- **Now playing** — album art, live progress and prev / play / next for anything that uses Windows media controls (Spotify, Apple Music, YouTube in any browser, Media Player…). Click the progress bar to jump, scroll the open card to change the volume. The visualizer follows what your speakers are actually playing, and the album art softly tints the open card.
+- **Now playing** — album art, live progress and prev / play / next for anything that uses Windows media controls (Spotify, Apple Music, YouTube in any browser, Media Player…). Click the progress bar to jump, scroll the open card to change the volume. The visualizer follows what your speakers are actually playing, and the album art softly tints the open card. Optional **synced lyrics** (from LRCLIB) show the current line on the open card — or in the pill.
 - **Timers, stopwatch & focus** — timers from the island, right-click, the tray, the command line or the API (pause, +1 min, *Again*), a stopwatch with laps, and focus sessions (focus / short break / long break rounds, optional Do not disturb). Pick any Windows alarm sound or your own .wav.
 - **Downloads** — live size and speed for Chrome, Edge, Firefox, Brave and Opera downloads, then *Open* / *Show in folder*. No extension needed.
 - **Calls** — Teams, Discord, Zoom, Slack, Phone Link, WhatsApp, Meet in a browser… detected from microphone use, with a running call timer. Optional mic-in-use indicator for every other app.
 - **Phone Link** — phone calls get their own card with the call timer and a button to bring Phone Link forward; every call card has **Mute / Unmute** for your mic. Incoming calls ring on the island when Windows lets Isle read notifications.
+- **Discord voice** (optional) — the channel you're in, **who's talking right now** (their picture and name in the pill), and **Mute / Deafen** buttons that work on Discord itself. One-time setup in *Settings → Discord* (Discord only allows this with an app you own; the page walks you through it).
 - **Savor** — while Isle is running, Savor's recordings show live on the island (timer, **Stop**, **Marker**), saved clips pop up with a thumbnail and **Edit / Copy / Show in folder**, and Savor's notifications appear here instead of in the corner.
 - **Live sports + Fullcourt** — your teams' scores from ESPN (NBA, WNBA, NFL, NCAA, MLB, NHL, MLS, EPL, LaLiga, UCL), with a peek on finals and score changes. Isle follows the favorite teams you pick in **Fullcourt**, tracks any game you send with Fullcourt's **Show on Isle** button, and opens games in the Fullcourt app (or the Fullcourt site on GitHub Pages if the app isn't installed).
 - **System moments** — a slim volume pill when you change or mute the volume, Caps Lock / Num Lock, charging and low battery, new screenshots (open, copy, show in folder), and an opt-in "copied" flash.
@@ -66,12 +67,12 @@ Open from the tray icon or right-click → *Settings…*. Changes apply instantl
 - **Island** — which display, left / center / right, offsets, size, idle / compact / expanded dimensions, corner roundness, and exactly which parts show in the compact pill and the expanded island; clock in the idle pill; your own quick-timer buttons.
 - **Appearance** — themes or custom colors, accent (from the content, or fixed), opacity, border, font, visualizer.
 - **Behavior & motion** — hover vs click, hover and close delays, click and scroll behavior, peeks, fullscreen hiding, animation speed, springiness, reduce motion.
-- **Activities** — per type (music, timers, downloads, calls, notifications, sports, system, your apps, updates): show, peek, priority.
+- **Activities** — per type (music, timers, downloads, calls, notifications, sports, system, your apps, updates): show, peek, priority. Synced lyrics (and their timing) are under *Now playing*.
 - **System** — volume pill, lock keys, battery alerts and threshold, screenshots, clipboard flash.
 - **Timers & focus** — alarm sound and repeats, focus / break lengths, rounds, auto-start, Do not disturb while focusing.
 - **Apps** — every detected app with show, peek, priority, forget.
 - **General** — start with Windows, Do not disturb, quiet hours (calls and finished timers can still alert), a global shortcut (default **Ctrl+Alt+I**).
-- **Amplite**, **Live sports**, **Integrations**, **About & updates** (export / import, diagnostics: memory, CPU time, connections).
+- **Amplite**, **Discord**, **Live sports**, **Integrations**, **About & updates** (export / import, diagnostics: memory, CPU time, connections).
 
 Settings are saved to `%APPDATA%\Isle\settings.json` (per-app choices in `apps.json`) (log: `isle.log` in the same folder). The custom theme's colors live in that file under `customTheme`.
 

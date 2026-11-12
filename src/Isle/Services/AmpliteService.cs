@@ -49,6 +49,7 @@ public sealed class AmpliteService : IModule
     string? _imageUrl;
     string _actionsKey = "";
     System.Windows.Threading.DispatcherTimer? _tick;
+    readonly Lyrics _lyrics = new();
 
     public AmpliteService(ActivityHub hub) => _hub = hub;
 
@@ -144,6 +145,7 @@ public sealed class AmpliteService : IModule
         {
             _now = null;
             _imageUrl = null;
+            _lyrics.Clear();
             _hub.Remove(ActivityId);
         }
         else
@@ -190,6 +192,7 @@ public sealed class AmpliteService : IModule
         }
 
         BuildActions(a, s);
+        _lyrics.Track(a, s.Title, s.Artist, s.Album, s.DurationMs / 1000);
         RenderProgress();
 
         if (newTrack && s.Playing && S.MediaPeekOnTrackChange) _hub.Peek(a);
@@ -274,6 +277,7 @@ public sealed class AmpliteService : IModule
         a.Progress = pos / s.DurationMs;
         a.ProgressLeft = Fmt.Clock(TimeSpan.FromMilliseconds(pos));
         a.ProgressRight = "-" + Fmt.Clock(TimeSpan.FromMilliseconds(s.DurationMs - pos));
+        _lyrics.Clock(pos / 1000, s.Playing);
     }
 
     /// <summary>Sends a command: toggle, next, prev, like, vol:+10, seek:-10000, eq:on|off|&lt;preset&gt;.</summary>
@@ -308,6 +312,7 @@ public sealed class AmpliteService : IModule
     {
         _cts.Cancel();
         _tick?.Stop();
+        _lyrics.Dispose();
         _hub.Remove(ActivityId);
         bool changed = IsConnected || HasTrack;
         IsConnected = HasTrack = IsPlaying = false;

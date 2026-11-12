@@ -82,7 +82,17 @@ public sealed class Activity : INotifyPropertyChanged
     public bool HasSource => !string.IsNullOrWhiteSpace(_source);
 
     string _title = "";
-    public string Title { get => _title; set => Set(ref _title, value ?? ""); }
+    public string Title { get => _title; set { if (Set(ref _title, value ?? "")) Raise(nameof(CompactTitle)); } }
+
+    /// <summary>Replaces the title in the compact pill when set (the current lyric line, who's talking…).</summary>
+    string? _compactText;
+    public string? CompactText { get => _compactText; set { if (Set(ref _compactText, value)) Raise(nameof(CompactTitle)); } }
+    public string CompactTitle => _compactText ?? _title;
+
+    /// <summary>The current lyric line on an open music card; null = no lyrics row.</summary>
+    string? _lyric;
+    public string? Lyric { get => _lyric; set { if (Set(ref _lyric, value)) Raise(nameof(HasLyric)); } }
+    public bool HasLyric => _lyric != null;
 
     string? _subtitle;
     public string? Subtitle { get => _subtitle; set { if (Set(ref _subtitle, value)) Raise(nameof(HasSubtitle)); } }

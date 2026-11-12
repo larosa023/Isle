@@ -32,6 +32,8 @@ public sealed class MediaService : IModule
     DateTime? _pausedSince;
     TimeSpan _position, _duration;
     DateTimeOffset _updatedAt, _snapshotAt;
+    readonly Lyrics _lyrics = new();
+    (string title, string? artist, string? album)? _meta;
 
     public MediaService(ActivityHub hub, AppSettings settings)
     {
@@ -136,6 +138,8 @@ public sealed class MediaService : IModule
         {
             _hub.Remove(Id);
             _trackKey = null;
+            _meta = null;
+            _lyrics.Clear();
             return;
         }
 
@@ -201,6 +205,8 @@ public sealed class MediaService : IModule
         a.Seek ??= SeekTo;
         a.OnScroll ??= d => CoreAudio.Step(d * 2);
         a.OnOpen = null;
+        _meta = (title, artist, props.AlbumTitle);
+        _lyrics.Track(a, title, artist, props.AlbumTitle, _duration.TotalSeconds);
 
         var key = title + "\n" + artist;
         bool newTrack = key != _trackKey;
@@ -257,6 +263,7 @@ public sealed class MediaService : IModule
         {
             _hub.Remove(Id);
             _trackKey = null;
+            _lyrics.Clear();
             return;
         }
 
@@ -361,12 +368,14 @@ public sealed class MediaService : IModule
         {
             _hub.Remove(Id);
             _trackKey = null;
+            _lyrics.Clear();
             return;
         }
 
         if (_duration.TotalSeconds < 1)
         {
             a.Progress = null;
+            _lyrics.Clear(); // no timeline, nothing to sync to
             return;
         }
 
@@ -383,6 +392,12 @@ public sealed class MediaService : IModule
         a.Progress = pos.TotalSeconds / _duration.TotalSeconds;
         a.ProgressLeft = Fmt.Clock(pos);
         a.ProgressRight = "-" + Fmt.Clock(_duration - pos);
+
+        if (_meta is { } m)
+        {
+            _lyrics.Track(a, m.title, m.artist, m.album, _duration.TotalSeconds);
+            _lyrics.Clock(pos.TotalSeconds, _playing);
+        }
     }
 
     static string AppName(string? aumid)
@@ -419,6 +434,7 @@ public sealed class MediaService : IModule
     {
         _disposed = true;
         _tick.Stop();
+        _lyrics.Dispose();
         if (_audio) CoreAudio.Release();
         _audio = false;
         AppRegistry.Changed -= OnRulesChanged;

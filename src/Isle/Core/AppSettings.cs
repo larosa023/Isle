@@ -141,6 +141,15 @@ public sealed class AppSettings
     // Now playing
     public bool MediaPeekOnTrackChange { get; set; }
     public int MediaHidePausedAfterMinutes { get; set; } = 10;
+    public bool Lyrics { get; set; }                           // synced lyrics from LRCLIB on the open music card
+    public bool LyricsInCompact { get; set; }                  // the current line replaces the song title in the pill
+    public int LyricsOffsetMs { get; set; }                    // + shows lines earlier, - later
+
+    // Discord voice (Discord's local RPC, with the user's own Discord application)
+    public bool DiscordVoice { get; set; }
+    public string DiscordClientId { get; set; } = "";
+    public bool DiscordShowSpeaker { get; set; } = true;       // the person talking (avatar + name) in the pill
+    public bool DiscordPeekOnJoin { get; set; } = true;
 
     // Amplite
     public bool AmpliteEnabled { get; set; } = true;
@@ -219,7 +228,7 @@ public sealed class AppSettings
     {
         media = Kind("media").Enabled, download = Kind("download").Enabled, call = Kind("call").Enabled,
         notification = Kind("notification").Enabled, sports = Kind("sports").Enabled, system = Kind("system").Enabled,
-        DownloadsFolder, ApiEnabled, ApiPort, AmpliteEnabled,
+        DownloadsFolder, ApiEnabled, ApiPort, AmpliteEnabled, DiscordVoice, DiscordClientId,
         VolumeHud, BatteryAlerts, LockKeys, Screenshots, ClipboardFlash, WeatherLat, WeatherLon, WeatherUnits,
     });
 

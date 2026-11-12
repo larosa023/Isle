@@ -121,6 +121,7 @@ public partial class App : Application
         if (s.Kind("media").Enabled && s.AmpliteEnabled) _modules.Add(new AmpliteService(Hub));
         if (s.Kind("download").Enabled) _modules.Add(new DownloadService(Hub, s));
         if (s.Kind("call").Enabled) _modules.Add(new CallService(Hub, s));
+        if (s.Kind("call").Enabled && s.DiscordVoice) _modules.Add(new DiscordService(Hub));
         if (s.Kind("notification").Enabled) _modules.Add(new NotificationService(Hub, s));
         if (s.Kind("sports").Enabled) _modules.Add(new SportsService(Hub, s));
         if (s.ApiEnabled) _modules.Add(new IntegrationServer(Hub, s, Timers));

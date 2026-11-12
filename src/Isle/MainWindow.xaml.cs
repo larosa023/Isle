@@ -606,6 +606,8 @@ public partial class MainWindow : Window
     double FitCompactWidth()
     {
         double max = CompactW;
+        // Lines of lyrics (or names) change every few seconds; resizing for each would be restless.
+        if (_bound?.CompactText != null) return max;
         double min = Math.Min(max, 150);
         CompactLayer.Width = double.NaN;
         CompactLayer.Measure(new Size(double.PositiveInfinity, CompactH));
@@ -647,7 +649,7 @@ public partial class MainWindow : Window
     {
         if (!_expanded)
         {
-            if (_s.CompactAutoWidth && e.PropertyName is nameof(Activity.Title) or nameof(Activity.HasTrailing) or nameof(Activity.ShowVisualizer) or nameof(Activity.IsLive) or nameof(Activity.Trailing))
+            if (_s.CompactAutoWidth && e.PropertyName is nameof(Activity.CompactTitle) or nameof(Activity.HasTrailing) or nameof(Activity.ShowVisualizer) or nameof(Activity.IsLive) or nameof(Activity.Trailing))
                 Dispatcher.InvokeAsync(Refresh, DispatcherPriority.Loaded);
             return;
         }
@@ -660,9 +662,24 @@ public partial class MainWindow : Window
             case nameof(Activity.Subtitle):
             case nameof(Activity.HasSource):
             case nameof(Activity.GlowSource):
+            case nameof(Activity.HasLyric):
                 Dispatcher.InvokeAsync(Refresh, DispatcherPriority.Loaded);
                 break;
+            case nameof(Activity.Lyric):
+                LyricIn();
+                break;
         }
+    }
+
+    /// <summary>The next lyric line rises gently into place.</summary>
+    void LyricIn()
+    {
+        if (_s.ReduceMotion || LyricHost.Visibility != Visibility.Visible) return;
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var tt = LyricText.RenderTransform as TranslateTransform;
+        if (tt == null || tt.IsFrozen) LyricText.RenderTransform = tt = new TranslateTransform();
+        LyricText.BeginAnimation(OpacityProperty, Anim(1, 280, ease, 0.2));
+        tt.BeginAnimation(TranslateTransform.YProperty, Anim(0, 320, ease, 8));
     }
 
     static double MeasureLayer(FrameworkElement layer, double width)

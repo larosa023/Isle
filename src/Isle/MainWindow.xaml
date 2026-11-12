@@ -96,7 +96,7 @@
                         </Border>
                     </Grid>
 
-                    <TextBlock x:Name="CompactTitle" Grid.Column="1" Text="{Binding Title}" FontSize="12.5" FontWeight="SemiBold"
+                    <TextBlock x:Name="CompactTitle" Grid.Column="1" Text="{Binding CompactTitle}" FontSize="12.5" FontWeight="SemiBold"
                                TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
 
                     <Border x:Name="CompactProgressHost" Grid.Column="1" VerticalAlignment="Bottom" Margin="0,0,0,4">
@@ -133,6 +133,7 @@
                 <Grid x:Name="ExpandedLayer" Margin="18,16,18,15" VerticalAlignment="Top" HorizontalAlignment="Center"
                       Opacity="0" Visibility="Hidden" IsHitTestVisible="False">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -182,7 +183,15 @@
                         </StackPanel>
                     </Grid>
 
-                    <Border x:Name="ProgressHost" Grid.Row="1">
+                    <!-- The current lyric line (synced lyrics). Fixed height, so line changes never resize the island. -->
+                    <Grid x:Name="LyricHost" Grid.Row="1" Height="44" Margin="0,12,0,-2" ClipToBounds="True"
+                          Visibility="{Binding HasLyric, Converter={StaticResource BoolToVis}}">
+                        <TextBlock x:Name="LyricText" Text="{Binding Lyric}" FontSize="15" FontWeight="SemiBold"
+                                   TextAlignment="Center" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxHeight="44"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <Border x:Name="ProgressHost" Grid.Row="2">
                     <Grid Margin="0,14,0,0"
                           Visibility="{Binding HasProgress, Converter={StaticResource BoolToVis}}">
                         <Grid.ColumnDefinitions>
@@ -207,7 +216,7 @@
                     </Grid>
                     </Border>
 
-                    <Border x:Name="ActionsHost" Grid.Row="2">
+                    <Border x:Name="ActionsHost" Grid.Row="3">
                     <ItemsControl ItemsSource="{Binding Actions}" HorizontalAlignment="Center" Margin="0,13,0,0"
                                   Focusable="False"
                                   Visibility="{Binding HasActions, Converter={StaticResource BoolToVis}}">

@@ -95,6 +95,12 @@ public sealed class CallService : IModule
         foreach (var (name, info) in users)
         {
             var id = IdFor(name);
+            if (name == "Discord" && DiscordService.CoversDiscordCall)
+            {
+                // The Discord voice card (channel, who's talking) shows this call instead.
+                if (_active.Remove(name)) _hub.Remove(id);
+                continue;
+            }
             var appKey = "mic:" + name.ToLowerInvariant();
             AppRegistry.Seen(appKey, name, "mic");
             if (!_active.ContainsKey(name))
