@@ -542,7 +542,7 @@ public partial class MainWindow : Window
         double w, h, o = 1;
         if (_expanded)
         {
-            var layer = _mixer ? MixerLayer : a == null ? IdleLayer : ExpandedLayer;
+            FrameworkElement layer = _mixer ? MixerLayer : a == null ? IdleLayer : ExpandedLayer;
             if (a == null && !_mixer) UpdateClock();
             w = ExpandedW;
             FixWidth(layer, w);

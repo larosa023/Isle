@@ -112,7 +112,7 @@ public sealed class MixerPanel : StackPanel
             _master = new Row(this, Speaker, "All sound")
             {
                 Get = () => CoreAudio.Get().level,
-                Set = v => CoreAudio.Set(v),
+                Set = v => CoreAudio.Set((float)v),
                 GetMuted = () => CoreAudio.Get().muted,
                 SetMuted = m => { if (CoreAudio.Get().muted != m) CoreAudio.ToggleMute(); },
                 Peak = CoreAudio.Peak,
