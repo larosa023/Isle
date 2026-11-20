@@ -18,7 +18,7 @@ namespace Isle.Controls;
 public sealed class MixerPanel : StackPanel
 {
     const string Speaker = "", SpeakerOff = "", Mic = "", MicOff = "";
-    const string Chevron = "", Close = "";
+    const string Chevron = "", CloseGlyph = "";
 
     /// <summary>Asks the island to show this menu (so the island stays open while it's up).</summary>
     public event Action<ContextMenu, UIElement>? MenuRequested;
@@ -50,7 +50,7 @@ public sealed class MixerPanel : StackPanel
         header.ColumnDefinitions.Add(new ColumnDefinition());
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.Children.Add(new TextBlock { Text = "Sound", FontSize = 15, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
-        var close = IconButton(Close, "Close", () => CloseRequested?.Invoke(), 12);
+        var close = IconButton(CloseGlyph, "Close", () => CloseRequested?.Invoke(), 12);
         Grid.SetColumn(close, 1);
         header.Children.Add(close);
         Children.Add(header);
