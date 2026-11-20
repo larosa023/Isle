@@ -95,6 +95,7 @@ public sealed class AppSettings
     public bool TrimMemory { get; set; } = true;               // hand unused memory back to Windows while idle
     public string Hotkey { get; set; } = "Ctrl+Alt+I";
     public string HideHotkey { get; set; } = "Ctrl+Alt+H";
+    public string MixerHotkey { get; set; } = "Ctrl+Alt+V";          // opens the sound panel (works mid-game)
     public bool StartWithWindows { get; set; }
 
     // Do not disturb

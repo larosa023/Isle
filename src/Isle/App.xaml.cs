@@ -280,7 +280,7 @@ public partial class App : Application
     /// <summary>
     /// Runs a command from the command line, a second launch, or the local API:
     /// --settings, --toggle, --expand, --hide, --show, --toggle-hide, --timer 5m [--label Tea],
-    /// --stopwatch, --focus, --stop-focus, --dnd on|off|toggle, --preview, --quit.
+    /// --stopwatch, --focus, --stop-focus, --dnd on|off|toggle, --mixer, --preview, --quit.
     /// </summary>
     public string HandleCommand(IReadOnlyList<string> args)
     {
@@ -297,6 +297,7 @@ public partial class App : Application
             {
                 case "settings": ShowSettings(next); if (next != null) i++; break;
                 case "toggle": case "expand": _island?.ToggleExpanded(); break;
+                case "mixer": case "sound": _island?.ToggleMixer(); break;
                 case "hide": _island?.SetUserHidden(true); break;
                 case "show": _island?.SetUserHidden(false); break;
                 case "toggle-hide": ToggleIslandHidden(); break;
@@ -345,6 +346,7 @@ public partial class App : Application
     }
 
     public (bool open, bool hide) HotkeysActive => _island?.HotkeysActive ?? (false, false);
+    public bool MixerHotkeyActive => _island?.MixerHotkeyActive ?? false;
 
     /// <summary>While Settings records a new shortcut, the current ones must not fire.</summary>
     public void SuspendHotkeys(bool suspend) => _island?.SuspendHotkeys(suspend);
@@ -368,6 +370,7 @@ public partial class App : Application
         menu.Items.Add(timers);
         menu.Items.Add(Item("Stopwatch", Timers.ToggleStopwatch));
         menu.Items.Add(Timers.InFocus ? Item("End focus session", Timers.StopFocus) : Item("Start a focus session", Timers.StartFocus));
+        menu.Items.Add(Item("Sound mixer", () => _island?.OpenMixer(), Shortcut(Settings.MixerHotkey)));
 
         if (current is { AppKey: string key })
         {
@@ -409,6 +412,9 @@ public partial class App : Application
 
         static string? Shortcut(string? hotkey) => string.IsNullOrWhiteSpace(hotkey) ? null : hotkey;
     }
+
+    /// <summary>The sound panel: every app's volume and the microphone.</summary>
+    public void OpenMixer() => _island?.OpenMixer();
 
     public void ToggleIslandHidden()
     {

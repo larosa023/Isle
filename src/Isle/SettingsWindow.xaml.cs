@@ -554,6 +554,7 @@ public partial class SettingsWindow : Window
         Section("Keyboard");
         Card("Open or close the island", null, HotkeyRecorder(() => _s.Hotkey, v => _s.Hotkey = v, () => App.Instance.HotkeysActive.open));
         Card("Hide or show the island", "Hides Isle completely; press again to bring it back.", HotkeyRecorder(() => _s.HideHotkey, v => _s.HideHotkey = v, () => App.Instance.HotkeysActive.hide));
+        Card("Sound mixer", "Every app's volume and your microphone, on the island — works in the middle of a game.", HotkeyRecorder(() => _s.MixerHotkey, v => _s.MixerHotkey = v, () => App.Instance.MixerHotkeyActive));
         Page.Children.Add(Hint("Click a shortcut, then press the new keys. Backspace turns it off, Esc cancels.", new Thickness(0, 4, 0, 0)));
 
         Section("Try it", "Put sample cards on the island to see your settings in action.");

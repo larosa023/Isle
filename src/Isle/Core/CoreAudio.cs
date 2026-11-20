@@ -9,7 +9,7 @@ namespace Isle.Core;
 /// Follows the default output device when it changes. UI thread only, except <see cref="Changed"/>
 /// handlers, which are already marshalled to the UI thread.
 /// </summary>
-public static class CoreAudio
+public static partial class CoreAudio
 {
     static IMMDeviceEnumerator? _enumerator;
     static IAudioEndpointVolume? _volume;
@@ -243,15 +243,16 @@ public static class CoreAudio
     [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     interface IMMDeviceEnumerator
     {
-        [PreserveSig] int EnumAudioEndpoints(int dataFlow, int stateMask, out IntPtr devices);
+        [PreserveSig] int EnumAudioEndpoints(int dataFlow, int stateMask, out IMMDeviceCollection devices);
         void GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice endpoint);
+        [PreserveSig] int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IMMDevice device);
     }
 
     [ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     interface IMMDevice
     {
         void Activate(ref Guid iid, int clsCtx, IntPtr activationParams, [MarshalAs(UnmanagedType.IUnknown)] out object iface);
-        [PreserveSig] int OpenPropertyStore(int access, out IntPtr properties);
+        [PreserveSig] int OpenPropertyStore(int access, out IPropertyStore properties);
         void GetId([MarshalAs(UnmanagedType.LPWStr)] out string id);
         [PreserveSig] int GetState(out int state);
     }
@@ -281,7 +282,7 @@ public static class CoreAudio
     }
 
     [ComImport, Guid("C02216F6-8C67-4B5B-9D00-D008E73E0064"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    interface IAudioMeterInformation
+    internal interface IAudioMeterInformation
     {
         [PreserveSig] int GetPeakValue(out float peak);
     }

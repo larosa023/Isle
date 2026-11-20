@@ -10,6 +10,7 @@
 - **Discord voice** (optional) — the channel you're in, **who's talking right now** (their picture and name in the pill), and **Mute / Deafen** buttons that work on Discord itself. One-time setup in *Settings → Discord* (Discord only allows this with an app you own; the page walks you through it).
 - **Savor** — while Isle is running, Savor's recordings show live on the island (timer, **Stop**, **Marker**), saved clips pop up with a thumbnail and **Edit / Copy / Show in folder**, and Savor's notifications appear here instead of in the corner.
 - **Live sports + Fullcourt** — your teams' scores from ESPN (NBA, WNBA, NFL, NCAA, MLB, NHL, MLS, EPL, LaLiga, UCL), with a peek on finals and score changes. Isle follows the favorite teams you pick in **Fullcourt**, tracks any game you send with Fullcourt's **Show on Isle** button, and opens games in the Fullcourt app (or the Fullcourt site on GitHub Pages if the app isn't installed).
+- **Sound mixer** — press **Ctrl+Alt+V** (even mid-game), click *Mixer* on the volume pill, or right-click → *Sound mixer*: the island opens into a panel with a slider, mute button and live level meter for **every app playing sound**, your speakers, and your **microphone** (level, mute, live level). Switch the default speakers or microphone right there.
 - **System moments** — a slim volume pill when you change or mute the volume, Caps Lock / Num Lock, charging and low battery, new screenshots (open, copy, show in folder), and an opt-in "copied" flash.
 - **Weather & clock** — the open idle island shows the time, date and current weather (Open-Meteo, no account); the idle pill can show the time and temperature.
 - **Two things at once** — when two activities are live, the second sits in a small bubble beside the pill. Click it to switch.
@@ -44,7 +45,8 @@ Requires Windows 10 (2004 / build 19041) or Windows 11.
 | **Click** the expanded island | Open the activity (the game page, the downloaded file…) |
 | **Right-click** | New timer, hide this app, Do not disturb, settings, updates, hide for an hour, quit |
 | **Ctrl+Alt+I** | Open / close the island |
-| **Ctrl+Alt+H** | Hide / show the island completely (both shortcuts are in Settings → General) |
+| **Ctrl+Alt+H** | Hide / show the island completely |
+| **Ctrl+Alt+V** | Sound mixer — every app's volume and your microphone (all three shortcuts are in Settings → General) |
 | **Tray icon** | Same menu; left-click opens Settings |
 | **Run Isle.exe again** | Opens Settings (or runs a command, below) |
 
@@ -55,7 +57,7 @@ Run `Isle.exe` with a command while Isle is running — handy for desktop shortc
 ```
 Isle.exe --timer 10m --label "Tea"     Isle.exe --stopwatch      Isle.exe --focus
 Isle.exe --toggle                      Isle.exe --toggle-hide    Isle.exe --dnd toggle
-Isle.exe --settings System             Isle.exe --preview        Isle.exe --quit
+Isle.exe --settings System             Isle.exe --mixer          Isle.exe --preview        Isle.exe --quit
 ```
 
 Durations: `90s`, `5m`, `1h30m`, `1:30`, or a plain number of minutes. Apps can send the same commands to `POST /v1/command`.

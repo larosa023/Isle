@@ -88,6 +88,7 @@ public sealed class SystemService : IModule
             x.Actions = new[]
             {
                 new IslandAction("", "Mute", CoreAudio.ToggleMute),
+                new IslandAction("", "Mixer", () => App.Instance.OpenMixer()),
                 new IslandAction("", null, () => CoreAudio.Step(-5)),
                 new IslandAction("", null, () => CoreAudio.Step(5), primary: true),
             };

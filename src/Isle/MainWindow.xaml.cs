@@ -30,16 +30,16 @@ public partial class MainWindow : Window
     const double SidePad = 24;
     const double BubbleRoom = 110;  // space kept beside the compact pill for the companion bubble
     const double RadiusCap = 32;    // big cards get soft corners, small states stay full pills
-    const int HotkeyId = 0x1515, HideHotkeyId = 0x1516;
+    const int HotkeyId = 0x1515, HideHotkeyId = 0x1516, MixerHotkeyId = 0x1517;
 
     readonly ActivityHub _hub;
     readonly DispatcherTimer _hoverTimer, _leaveTimer, _peekTimer, _guardTimer, _hideTimer;
     AppSettings _s;
     IntPtr _hwnd;
     Activity? _bound, _bubbleItem;
-    bool _hover, _sticky, _menuOpen, _peeking, _expanded;
+    bool _hover, _sticky, _menuOpen, _peeking, _expanded, _mixer;
     bool _fullscreenHidden, _userHidden, _appHidden, _overMaximized;
-    bool _hotkeyRegistered, _hideHotkeyRegistered, _clipboardListening, _accentBorder;
+    bool _hotkeyRegistered, _hideHotkeyRegistered, _mixerHotkeyRegistered, _clipboardListening, _accentBorder;
     double _glowTarget;
     int _guardTicks;
     (double w, double h, double o) _target = (-1, -1, -1);
@@ -79,6 +79,9 @@ public partial class MainWindow : Window
 
         _hub.Changed += Refresh;
         _hub.PeekRequested += OnPeek;
+        MixerLayer.MenuRequested += (menu, target) => OpenMenu(menu, target);
+        MixerLayer.CloseRequested += Collapse;
+        MixerLayer.LayoutChanged += () => { if (_mixer) Dispatcher.InvokeAsync(Refresh, DispatcherPriority.Loaded); };
         WeatherService.Updated += OnWeather;
 
         SourceInitialized += (_, _) =>
@@ -102,6 +105,8 @@ public partial class MainWindow : Window
             WeatherService.Updated -= OnWeather;
             if (_hotkeyRegistered) Native.UnregisterHotKey(_hwnd, HotkeyId);
             if (_hideHotkeyRegistered) Native.UnregisterHotKey(_hwnd, HideHotkeyId);
+            if (_mixerHotkeyRegistered) Native.UnregisterHotKey(_hwnd, MixerHotkeyId);
+            MixerLayer.Close();
             if (_clipboardListening) Native.RemoveClipboardFormatListener(_hwnd);
         };
     }
@@ -144,7 +149,7 @@ public partial class MainWindow : Window
         double bubble = s.CompanionBubble ? BubbleRoom * 2 : 0;
         double widest = Math.Max(ExpandedW, Math.Max(CompactW + bubble, IdleW));
         Width = (widest + SidePad * 2) * scale;
-        Height = (top + 340) * scale;
+        Height = (top + 600) * scale; // room for the sound panel; the empty part is click-through
 
         // Pill and bubble share a three-column stage. Centered: the pill stays dead center and the
         // bubble hangs off its right side. Left/right: the bubble sits on the inner side.
@@ -264,6 +269,7 @@ public partial class MainWindow : Window
                  {
                      ("", "Stopwatch", () => App.Instance.Timers.ToggleStopwatch()),
                      ("", "Focus session", () => App.Instance.Timers.StartFocus()),
+                     ("", "Sound mixer", OpenMixer),
                  })
         {
             var b = new Button
@@ -333,6 +339,7 @@ public partial class MainWindow : Window
         if (_hwnd == IntPtr.Zero) return;
         _hotkeyRegistered = Register(HotkeyId, _s.Hotkey, _hotkeyRegistered);
         _hideHotkeyRegistered = Register(HideHotkeyId, _s.HideHotkey, _hideHotkeyRegistered);
+        _mixerHotkeyRegistered = Register(MixerHotkeyId, _s.MixerHotkey, _mixerHotkeyRegistered);
     }
 
     bool Register(int id, string? text, bool wasRegistered)
@@ -351,7 +358,8 @@ public partial class MainWindow : Window
         {
             if (_hotkeyRegistered) Native.UnregisterHotKey(_hwnd, HotkeyId);
             if (_hideHotkeyRegistered) Native.UnregisterHotKey(_hwnd, HideHotkeyId);
-            _hotkeyRegistered = _hideHotkeyRegistered = false;
+            if (_mixerHotkeyRegistered) Native.UnregisterHotKey(_hwnd, MixerHotkeyId);
+            _hotkeyRegistered = _hideHotkeyRegistered = _mixerHotkeyRegistered = false;
         }
         else
         {
@@ -361,6 +369,7 @@ public partial class MainWindow : Window
 
     /// <summary>Whether each shortcut is registered (false = empty, invalid, or taken by another app).</summary>
     public (bool open, bool hide) HotkeysActive => (_hotkeyRegistered, _hideHotkeyRegistered);
+    public bool MixerHotkeyActive => _mixerHotkeyRegistered;
 
     public static bool TryParseHotkey(string? text, out uint mods, out uint vk)
     {
@@ -394,6 +403,10 @@ public partial class MainWindow : Window
                 handled = true;
                 SetUserHidden(!_userHidden);
                 break;
+            case Native.WM_HOTKEY when wParam.ToInt32() == MixerHotkeyId:
+                handled = true;
+                ToggleMixer();
+                break;
             case Native.WM_HOTKEY when wParam.ToInt32() == HotkeyId:
                 handled = true;
                 ToggleExpanded();
@@ -426,6 +439,35 @@ public partial class MainWindow : Window
 
     // ───────────────────────────── state machine ─────────────────────────────
 
+    /// <summary>Opens the sound panel on the island (or closes it if it's open).</summary>
+    public void ToggleMixer()
+    {
+        if (_mixer && _expanded)
+        {
+            Collapse();
+            return;
+        }
+        OpenMixer();
+    }
+
+    public void OpenMixer()
+    {
+        if (_userHidden) SetUserHidden(false);
+        if (_fullscreenHidden || _appHidden)
+        {
+            // Opened over a game: show the island for this.
+            _fullscreenHidden = _appHidden = false;
+            UpdateVisibility();
+        }
+        _peekTimer.Stop();
+        _peeking = false;
+        _mixer = true;
+        MixerLayer.Open();
+        _sticky = true;
+        _expanded = true;
+        Refresh();
+    }
+
     public void ToggleExpanded()
     {
         if (_userHidden) SetUserHidden(false);
@@ -450,6 +492,11 @@ public partial class MainWindow : Window
         _expanded = false;
         _sticky = false;
         _peeking = false;
+        if (_mixer)
+        {
+            _mixer = false;
+            MixerLayer.Close();
+        }
         if (_hub.Pinned != null) _hub.Pinned = null; // raises Changed → Refresh
         Refresh();
     }
@@ -495,8 +542,8 @@ public partial class MainWindow : Window
         double w, h, o = 1;
         if (_expanded)
         {
-            var layer = a == null ? IdleLayer : ExpandedLayer;
-            if (a == null) UpdateClock();
+            var layer = _mixer ? MixerLayer : a == null ? IdleLayer : ExpandedLayer;
+            if (a == null && !_mixer) UpdateClock();
             w = ExpandedW;
             FixWidth(layer, w);
             h = MeasureLayer(layer, w);
@@ -547,7 +594,7 @@ public partial class MainWindow : Window
 
     void UpdateGlow(Activity? a)
     {
-        var src = _expanded && _s.ArtworkGlow && a != null ? a.GlowSource : null;
+        var src = _expanded && !_mixer && _s.ArtworkGlow && a != null ? a.GlowSource : null;
         if (src != null) GlowBrush.ImageSource = src;
         double target = src != null ? Math.Clamp(_s.GlowStrength, 0.05, 0.8) : 0;
         if (Math.Abs(target - _glowTarget) < 0.001) return;
@@ -695,6 +742,7 @@ public partial class MainWindow : Window
         SetLayer(ExpandedLayer, ReferenceEquals(visible, ExpandedLayer), delayIn);
         SetLayer(IdleLayer, ReferenceEquals(visible, IdleLayer), delayIn);
         SetLayer(IdleCompactLayer, ReferenceEquals(visible, IdleCompactLayer), delayIn);
+        SetLayer(MixerLayer, ReferenceEquals(visible, MixerLayer), delayIn);
     }
 
     void SetLayer(FrameworkElement el, bool show, bool delayIn)
@@ -777,6 +825,7 @@ public partial class MainWindow : Window
 
         bool fs = _s.HideInFullscreen && Native.IsFullscreenActive(_hwnd);
         bool app = _s.HideForApps.Count > 0 && ForegroundIsHiddenApp();
+        if (_mixer && _expanded) fs = app = false; // the sound panel was opened on purpose, even over a game
         if (fs != _fullscreenHidden || app != _appHidden)
         {
             _fullscreenHidden = fs;
@@ -880,12 +929,14 @@ public partial class MainWindow : Window
     void Pill_MouseLeave(object sender, MouseEventArgs e)
     {
         _hover = false;
+        if (_mixer) _sticky = false; // the sound panel closes once you move away from it
         _hoverTimer.Stop();
         _leaveTimer.Start();
     }
 
     void Pill_Click(object sender, MouseButtonEventArgs e)
     {
+        if (_mixer) return; // clicks between the sliders shouldn't close the panel
         if (!_expanded)
         {
             _sticky = true;
@@ -922,6 +973,7 @@ public partial class MainWindow : Window
 
     void Pill_Wheel(object sender, MouseWheelEventArgs e)
     {
+        if (_mixer) return; // the sliders handle the wheel themselves
         var a = _hub.Current;
         if (_expanded && _s.ScrollAdjustsVolume && a?.OnScroll != null)
         {

@@ -287,6 +287,10 @@
                     </Border>
                 </Grid>
 
+                <!-- ───────────── Sound panel: speakers, every app, microphone ───────────── -->
+                <c:MixerPanel x:Name="MixerLayer" Margin="18,14,18,14" VerticalAlignment="Top" HorizontalAlignment="Center"
+                              Opacity="0" Visibility="Hidden" IsHitTestVisible="False"/>
+
                 <!-- ───────────── Expanded with nothing going on: clock, weather, quick actions ───────────── -->
                 <Grid x:Name="IdleLayer" Margin="20,14,20,16" VerticalAlignment="Top" HorizontalAlignment="Center"
                       Opacity="0" Visibility="Hidden" IsHitTestVisible="False">
