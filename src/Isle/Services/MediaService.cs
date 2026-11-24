@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Isle.Core;
 using Windows.Foundation;
@@ -33,6 +34,7 @@ public sealed class MediaService : IModule
     TimeSpan _position, _duration;
     DateTimeOffset _updatedAt, _snapshotAt;
     readonly Lyrics _lyrics = new();
+    bool _artIsIcon;
     (string title, string? artist, string? album)? _meta;
 
     public MediaService(ActivityHub hub, AppSettings settings)
@@ -210,11 +212,18 @@ public sealed class MediaService : IModule
 
         var key = title + "\n" + artist;
         bool newTrack = key != _trackKey;
-        if (newTrack || a.Image == null)
+        if (newTrack || a.Image == null || _artIsIcon)
         {
             _trackKey = key;
             var (image, accent) = await LoadArtAsync(props.Thumbnail);
             if (_disposed || version != _propsVersion) return;
+            // No artwork (or it couldn't be read): show the app's own icon instead of a plain note.
+            _artIsIcon = image == null;
+            if (image == null && AppIdentity.Resolve(session.SourceAppUserModelId).Icon is BitmapSource appIcon)
+            {
+                image = appIcon;
+                accent = Images.Dominant(appIcon);
+            }
             a.Image = image;
             a.Accent = accent;
             if (newTrack && _playing && S.MediaPeekOnTrackChange) _hub.Peek(a);
@@ -419,15 +428,23 @@ public sealed class MediaService : IModule
         if (id.Contains("youtube")) return "YouTube Music";
         if (id.Contains("amplite")) return "Amplite";
 
+        // The name the Start menu shows (works for Store apps and installed apps like Ripple).
+        if (AppIdentity.Resolve(aumid).Name is { } shown) return shown;
+
         var name = aumid;
         int bang = name.IndexOf('!');
         if (bang > 0) name = name[..bang];
         int underscore = name.IndexOf('_');
         if (underscore > 0) name = name[..underscore];
         if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) name = name[..^4];
-        int dot = name.LastIndexOf('.');
-        if (dot >= 0 && dot < name.Length - 1) name = name[(dot + 1)..];
-        return name;
+        // Reverse-domain IDs ("app.ripple.desktop", "com.squirrel.Discord.Discord"): the most
+        // specific part that isn't a generic word.
+        var parts = name.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        string[] generic = { "desktop", "app", "application", "client", "windows", "win", "main", "player", "com", "org", "net", "io", "dev" };
+        for (int i = parts.Length - 1; i >= 0; i--)
+            if (Array.IndexOf(generic, parts[i].ToLowerInvariant()) < 0)
+                return char.ToUpper(parts[i][0]) + parts[i][1..];
+        return parts.Length > 0 ? parts[^1] : name;
     }
 
     public void Dispose()
